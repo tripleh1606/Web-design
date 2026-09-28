@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Terminal Portfolio: Tuấn Anh (Front-End) & Hữu Hiệp (Database) - HCMUS Undergraduates. Featuring CounterOps & VietVoyage.">
+  <title>hcmus@duo: ~/portfolio (zsh)</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Terminal Top Header / Navigation -->
+  <header class="header">
+    <div class="container nav-container">
+      <a href="#hero" class="brand-logo" aria-label="Terminal Home">
+        <span class="brand-prompt">hcmus@duo:~$</span>
+        <span>./portfolio<span class="cursor"></span></span>
+      </a>
+
+      <!-- Navigation Links -->
+      <nav class="nav-menu" id="navMenu" aria-label="Terminal Navigation">
+        <a href="#hero" class="nav-link active">home</a>
+        <a href="#about" class="nav-link">about</a>
+        <a href="#team" class="nav-link">team</a>
+        <a href="#projects" class="nav-link">projects</a>
+        <a href="#skills" class="nav-link">skills</a>
+        <a href="#contact" class="nav-link">contact</a>
+      </nav>
+
+      <!-- Terminal Actions -->
+      <div class="nav-actions">
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle terminal theme" title="Toggle Terminal Theme">
+          <span id="themeLabel">[THEME: DARK]</span>
+        </button>
+
+        <button class="mobile-toggle" id="mobileToggle" aria-label="Toggle terminal menu" aria-expanded="false" aria-controls="navMenu">
+          [MENU]
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Terminal Section -->
+    <section class="section hero-section" id="hero">
+      <div class="container hero-grid">
+        <!-- Main Shell Window -->
+        <div class="term-window hero-window glow-on-hover">
+          <div class="term-bar">
+            <div class="term-dots">
+              <span class="term-dot dot-red"></span>
+              <span class="term-dot dot-yellow"></span>
+              <span class="term-dot dot-green"></span>
+            </div>
+            <span class="term-title">bash - session #1 &mdash; 80x24</span>
+            <span class="t-muted">hcmus-vnu</span>
+          </div>
+
+          <div class="term-body">
+            <div class="term-cmd">
+              <span class="term-prompt">hcmus@student:~$</span>
+              <span class="t-yellow">cat</span>
+              <span class="t-cyan">overview.md</span>
+            </div>
+
+            <div class="hero-output">
+              <div class="hero-badge-line anim-float">
+                <span class="status-dot-pulse"></span>
+                <span>HCMUS Undergraduates // Web Programming &amp; Database Systems</span>
+              </div>
+
+              <h1 class="hero-title-term">
+                Two Minds. One Terminal.<br>
+                <span class="t-cyan">Front-End</span> &amp; <span class="t-yellow">Database</span> Duo.
+              </h1>
+
+              <p class="hero-desc">
+                We are <strong class="t-cyan">Tuấn Anh</strong> (Front-End) and <strong class="t-yellow">Hữu Hiệp</strong> (Database), undergraduates at the <strong>University of Science, VNU-HCM (HCMUS)</strong>. We collaborate to engineer production-ready web interfaces backed by resilient, well-structured relational and document databases.
+              </p>
+
+              <div class="hero-actions-line">
+                <a href="#projects" class="btn-cli btn-cli-primary">
+                  <span>./explore_projects.sh</span>
+                  <span>&rarr;</span>
+                </a>
+                <a href="#contact" class="btn-cli">
+                  <span>./contact_us.sh</span>
+                </a>
+              </div>
+
+              <!-- Quick CLI Jumper -->
+              <div class="term-console-bar">
+                <span class="t-green">❯</span>
+                <input type="text" id="quickCli" class="term-console-input" placeholder="Type a command: 'counterops', 'travel', 'team', 'skills', 'about'..." autocomplete="off" spellcheck="false">
+                <span class="cursor"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Side Terminal: Duo Manifest -->
+        <div class="hero-side-term">
+          <div class="term-window anim-float-delayed">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">duo_manifest.json</span>
+              <span class="t-muted">JSON</span>
+            </div>
+
+            <div class="term-body">
+              <pre class="json-block"><code><span class="t-muted">{</span>
+  <span class="t-purple">"institution"</span>: <span class="t-green">"HCMUS (VNU-HCM)"</span>,
+  <span class="t-purple">"status"</span>: <span class="t-green">"Undergraduate Students"</span>,
+  <span class="t-purple">"members"</span>: [
+    {
+      <span class="t-purple">"name"</span>: <span class="t-cyan">"Tuấn Anh"</span>,
+      <span class="t-purple">"role"</span>: <span class="t-cyan">"Front-End Lead"</span>,
+      <span class="t-purple">"focus"</span>: <span class="t-green">"Next.js, React, UI/UX"</span>
+    },
+    {
+      <span class="t-purple">"name"</span>: <span class="t-yellow">"Hữu Hiệp"</span>,
+      <span class="t-purple">"role"</span>: <span class="t-yellow">"Database Lead"</span>,
+      <span class="t-purple">"focus"</span>: <span class="t-green">"Postgres, MongoDB, RLS"</span>
+    }
+  ],
+  <span class="t-purple">"flagship_projects"</span>: [
+    <span class="t-cyan">"CounterOps"</span>,
+    <span class="t-cyan">"VietVoyage Travel Planner"</span>
+  ]
+<span class="t-muted">}</span></code></pre>
+
+              <div class="duo-terminal-avatars" style="margin-top: 1rem;">
+                <div class="dev-avatar-box">
+                  <img src="assets/images/person1.svg" alt="Tuấn Anh" class="dev-avatar-img">
+                  <div class="dev-avatar-name">Tuấn Anh</div>
+                  <div class="dev-avatar-role">Front-End</div>
+                </div>
+                <div class="dev-avatar-box">
+                  <img src="assets/images/person2.svg" alt="Hữu Hiệp" class="dev-avatar-img">
+                  <div class="dev-avatar-name">Hữu Hiệp</div>
+                  <div class="dev-avatar-role">Database</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="section section-alt" id="about">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-cmd-bar">
+            <span class="term-prompt">hcmus@duo:~$</span>
+            <span class="t-yellow">man</span>
+            <span class="t-cyan">collaboration-philosophy</span>
+          </div>
+          <h2 class="section-title">About Our Teamwork</h2>
+        </div>
+
+        <div class="about-grid">
+          <!-- Card 1 -->
+          <div class="term-window about-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">client_server_bridge.sh</span>
+            </div>
+            <div class="term-body">
+              <div class="term-file-header"># 1. Clear Division &amp; Synchronized Flow</div>
+              <p>
+                Whether building restaurant POS systems (CounterOps) or travel itinerary services (VietVoyage), we enforce clear API boundaries from day one.
+              </p>
+              <div class="term-checklist">
+                <div class="check-line">
+                  <span class="check-glyph">[x]</span>
+                  <span><strong>Tuấn Anh</strong> handles Next.js App Router, Tailwind layout, KDS screens, and UI flows.</span>
+                </div>
+                <div class="check-line">
+                  <span class="check-glyph">[x]</span>
+                  <span><strong>Hữu Hiệp</strong> designs database schemas (PostgreSQL / MongoDB), handles RLS policies, indexing, and rate limiting.</span>
+                </div>
+                <div class="check-line">
+                  <span class="check-glyph">[x]</span>
+                  <span>Pair-programming and iterative testing across local dev and mock services.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="term-window about-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">academic_standards.sql</span>
+            </div>
+            <div class="term-body">
+              <div class="term-file-header"># 2. HCMUS Academic Foundations</div>
+              <p>
+                We apply core coursework concepts taught at the University of Science, VNU-HCM directly into practical full-stack projects.
+              </p>
+              <div class="term-checklist">
+                <div class="check-line">
+                  <span class="check-glyph">[x]</span>
+                  <span>Normalized schemas (3NF) &amp; geospatial GeoJSON 2dsphere indexing.</span>
+                </div>
+                <div class="check-line">
+                  <span class="check-glyph">[x]</span>
+                  <span>Clean component hierarchies, responsive mobile views, and accessible controls.</span>
+                </div>
+                <div class="check-line">
+                  <span class="check-glyph">[x]</span>
+                  <span>Security-first development: Token auth, IP rate limits, and Row-Level Security.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Members Section -->
+    <section class="section" id="team">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-cmd-bar">
+            <span class="term-prompt">hcmus@duo:~$</span>
+            <span class="t-yellow">ls -la</span>
+            <span class="t-cyan">./team/</span>
+          </div>
+          <h2 class="section-title">The 2 People</h2>
+        </div>
+
+        <div class="team-grid">
+          <!-- Member 1: Tuấn Anh -->
+          <div class="term-window member-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">tuananh@hcmus: ~/frontend</span>
+              <span class="t-cyan">FE-DEV</span>
+            </div>
+
+            <div class="term-body">
+              <div class="member-top-row">
+                <img src="assets/images/person1.svg" alt="Tuấn Anh" class="member-avatar-sm">
+                <div>
+                  <h3 class="member-name-heading">Tuấn Anh</h3>
+                  <div class="t-cyan t-bold">Front-End Developer</div>
+                  <div class="member-badge-hcmus">HCMUS Undergraduate Student</div>
+                </div>
+              </div>
+
+              <div class="member-bio-text">
+                Undergraduate student at HCMUS. Passionate about Next.js, React, modern CSS, and component systems. Built the POS cashier interface &amp; Kitchen KDS for CounterOps, as well as the interactive travel planning interface for VietVoyage.
+              </div>
+
+              <div>
+                <div class="term-subhead">$ echo $TECH_STACK</div>
+                <div class="term-tag-list">
+                  <span class="term-tag">Next.js 14 / React</span>
+                  <span class="term-tag">TypeScript</span>
+                  <span class="term-tag">Tailwind CSS</span>
+                  <span class="term-tag">HTML5 / CSS3</span>
+                  <span class="term-tag">Git</span>
+                </div>
+              </div>
+
+              <div class="member-links-row">
+                <div class="cli-link-group">
+                  <a href="https://github.com" target="_blank" rel="noopener noreferrer">[GitHub]</a>
+                  <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">[LinkedIn]</a>
+                  <a href="mailto:tuananh.fit@gmail.com">[Email]</a>
+                </div>
+                <span class="t-green"><span class="status-dot-pulse"></span> status: active</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Member 2: Hữu Hiệp -->
+          <div class="term-window member-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">huuhiep@hcmus: ~/database</span>
+              <span class="t-yellow">DB-DEV</span>
+            </div>
+
+            <div class="term-body">
+              <div class="member-top-row">
+                <img src="assets/images/person2.svg" alt="Hữu Hiệp" class="member-avatar-sm">
+                <div>
+                  <h3 class="member-name-heading">Hữu Hiệp</h3>
+                  <div class="t-yellow t-bold">Database &amp; Backend Developer</div>
+                  <div class="member-badge-hcmus">HCMUS Undergraduate Student</div>
+                </div>
+              </div>
+
+              <div class="member-bio-text">
+                Undergraduate student at HCMUS. Focuses on PostgreSQL &amp; MongoDB data modeling, Supabase RLS security, pgvector embeddings for AI RAG, geospatial 2dsphere indexing, and token-based rate-limited APIs.
+              </div>
+
+              <div>
+                <div class="term-subhead">$ echo $TECH_STACK</div>
+                <div class="term-tag-list">
+                  <span class="term-tag">PostgreSQL (Supabase)</span>
+                  <span class="term-tag">MongoDB (MongoEngine)</span>
+                  <span class="term-tag">Python (Flask)</span>
+                  <span class="term-tag">Row-Level Security (RLS)</span>
+                  <span class="term-tag">Git</span>
+                </div>
+              </div>
+
+              <div class="member-links-row">
+                <div class="cli-link-group">
+                  <a href="https://github.com" target="_blank" rel="noopener noreferrer">[GitHub]</a>
+                  <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">[LinkedIn]</a>
+                  <a href="mailto:huuhiep.fit@gmail.com">[Email]</a>
+                </div>
+                <span class="t-green"><span class="status-dot-pulse"></span> status: active</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Projects Section (Our 2 Real Projects) -->
+    <section class="section section-alt" id="projects">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-cmd-bar">
+            <span class="term-prompt">hcmus@duo:~$</span>
+            <span class="t-yellow">git log</span>
+            <span class="t-cyan">--oneline -n 2</span>
+          </div>
+          <h2 class="section-title">Our 2 Projects</h2>
+        </div>
+
+        <div class="projects-stack">
+          <!-- Project 1: CounterOps -->
+          <div class="term-window project-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">~/projects/counterops &mdash; branch: main</span>
+              <span class="t-cyan">[PROJ_01]</span>
+            </div>
+
+            <div class="term-body">
+              <div class="project-preview-pane">
+                <img src="assets/images/project1.jpg" alt="CounterOps POS and Kitchen Display Interface" class="project-img">
+              </div>
+
+              <div class="project-details-pane">
+                <div>
+                  <div class="t-cyan t-bold" style="font-size: 0.8rem;">$ cat README.md | head -n 3</div>
+                  <h3 class="project-heading">CounterOps: Cafe &amp; Restaurant Operations</h3>
+                  <p class="project-synopsis">
+                    Comprehensive store operations platform covering sales POS (table/takeaway modes), real-time kitchen display, zone management, recipe-based inventory, Excel import/export, GrabFood order simulation, and an AI analytics assistant with hybrid RAG.
+                  </p>
+                </div>
+
+                <div class="role-breakdown-box">
+                  <div class="role-entry">
+                    <span class="role-label">Tuấn Anh [FE]:</span>
+                    <span>Next.js 14 App Router UI, POS cashier flow, Kitchen KDS display, table grids &amp; Tailwind CSS.</span>
+                  </div>
+                  <div class="role-entry">
+                    <span class="role-label">Hữu Hiệp [DB]:</span>
+                    <span>Supabase PostgreSQL schema, Row-Level Security (RLS), pgvector for AI RAG &amp; inventory triggers.</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="term-subhead">$ cat stack.txt</div>
+                  <div class="term-tag-list">
+                    <span class="term-tag">Next.js 14</span>
+                    <span class="term-tag">TypeScript</span>
+                    <span class="term-tag">Tailwind CSS</span>
+                    <span class="term-tag">Supabase Postgres</span>
+                    <span class="term-tag">pgvector</span>
+                    <span class="term-tag">Vitest</span>
+                  </div>
+                </div>
+
+                <div class="project-actions-row">
+                  <button class="btn-cli btn-cli-primary modal-trigger" data-modal="modalProject1">
+                    ./view_details.sh
+                  </button>
+                  <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-cli">
+                    git clone
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Project 2: Travel Planning Backend API & Web Interface -->
+          <div class="term-window project-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">~/projects/vietvoyage-travel &mdash; branch: main</span>
+              <span class="t-yellow">[PROJ_02]</span>
+            </div>
+
+            <div class="term-body">
+              <div class="project-preview-pane">
+                <img src="assets/images/project2.jpg" alt="Travel Planning Platform Interface" class="project-img">
+              </div>
+
+              <div class="project-details-pane">
+                <div>
+                  <div class="t-yellow t-bold" style="font-size: 0.8rem;">$ cat README.md | head -n 3</div>
+                  <h3 class="project-heading">VietVoyage: AI Landmark &amp; Travel Planner</h3>
+                  <p class="project-synopsis">
+                    Computational-Thinking travel planning platform featuring AI image recognition for Vietnamese landmarks, OpenStreetMap (OSM) Point of Interest (POI) discovery by province, trip itinerary management, and rate-limited token authentication.
+                  </p>
+                </div>
+
+                <div class="role-breakdown-box">
+                  <div class="role-entry">
+                    <span class="role-label">Tuấn Anh [FE]:</span>
+                    <span>Travel website interface, multi-day itinerary builder UI, POI filters &amp; landmark upload tester.</span>
+                  </div>
+                  <div class="role-entry">
+                    <span class="role-label">Hữu Hiệp [DB]:</span>
+                    <span>MongoDB geospatial models (2dsphere index), MongoEngine ODM, rate limiter &amp; token security.</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="term-subhead">$ cat stack.txt</div>
+                  <div class="term-tag-list">
+                    <span class="term-tag">Python (Flask)</span>
+                    <span class="term-tag">MongoDB</span>
+                    <span class="term-tag">MongoEngine</span>
+                    <span class="term-tag">OpenStreetMap (OSM)</span>
+                    <span class="term-tag">GeoJSON</span>
+                    <span class="term-tag">JavaScript</span>
+                  </div>
+                </div>
+
+                <div class="project-actions-row">
+                  <button class="btn-cli btn-cli-primary modal-trigger" data-modal="modalProject2">
+                    ./view_details.sh
+                  </button>
+                  <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-cli">
+                    git clone
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skills Section (Minimized Tech Tree) -->
+    <section class="section" id="skills">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-cmd-bar">
+            <span class="term-prompt">hcmus@duo:~$</span>
+            <span class="t-yellow">tree -L 2</span>
+            <span class="t-cyan">./skills/</span>
+          </div>
+          <h2 class="section-title">Essential Tech Stack</h2>
+        </div>
+
+        <div class="skills-grid">
+          <!-- Skill Category 1 -->
+          <div class="term-window skill-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">skills/frontend/</span>
+              <span class="t-cyan">Tuấn Anh</span>
+            </div>
+            <div class="term-body">
+              <div class="tree-view">
+                <div class="tree-root">. (Front-End Engineering)</div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-green">Next.js 14 (App Router)</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-green">React 18 &amp; TypeScript</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-green">Tailwind CSS / UI Components</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> HTML5 Semantic &amp; Modern CSS</div>
+                <div class="tree-item"><span class="tree-branch">└──</span> Responsive Web Design</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Skill Category 2 -->
+          <div class="term-window skill-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">skills/database/</span>
+              <span class="t-yellow">Hữu Hiệp</span>
+            </div>
+            <div class="term-body">
+              <div class="tree-view">
+                <div class="tree-root">. (Database &amp; Backend)</div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-yellow">PostgreSQL (Supabase + RLS)</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-yellow">MongoDB (MongoEngine ODM)</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-yellow">pgvector &amp; Geospatial 2dsphere</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> Python (Flask API Architecture)</div>
+                <div class="tree-item"><span class="tree-branch">└──</span> Rate Limiting &amp; Token Auth</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Skill Category 3 -->
+          <div class="term-window skill-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">skills/tools/</span>
+              <span class="t-purple">Duo</span>
+            </div>
+            <div class="term-body">
+              <div class="tree-view">
+                <div class="tree-root">. (Development Tools)</div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-purple">Git &amp; GitHub Workflows</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> <span class="t-purple">Vitest &amp; API Testing</span></div>
+                <div class="tree-item"><span class="tree-branch">├──</span> OpenStreetMap (OSM) Services</div>
+                <div class="tree-item"><span class="tree-branch">├──</span> VS Code &amp; Linux / PowerShell</div>
+                <div class="tree-item"><span class="tree-branch">└──</span> Pair Programming &amp; Code Review</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section class="section section-alt" id="contact">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-cmd-bar">
+            <span class="term-prompt">hcmus@duo:~$</span>
+            <span class="t-yellow">./send_message.sh</span>
+            <span class="t-cyan">--interactive</span>
+          </div>
+          <h2 class="section-title">Contact Us</h2>
+        </div>
+
+        <div class="contact-grid">
+          <!-- Terminal Contact Info -->
+          <div class="term-window contact-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">contact_endpoints.conf</span>
+            </div>
+            <div class="term-body">
+              <div class="t-cyan t-bold"># HCMUS Student Duo Channels</div>
+              <p>
+                Interested in our projects, coursework collaborations, or internship opportunities? Send us a message directly.
+              </p>
+
+              <div class="tree-view" style="margin-top: 0.5rem;">
+                <div class="tree-item">
+                  <span class="t-cyan">FE_CONTACT</span>: tuananh.fit@gmail.com
+                </div>
+                <div class="tree-item">
+                  <span class="t-yellow">DB_CONTACT</span>: huuhiep.fit@gmail.com
+                </div>
+                <div class="tree-item">
+                  <span class="t-purple">LOCATION</span>: HCMUS, 227 Nguyen Van Cu, Dist. 5, HCMC
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Terminal CLI Form -->
+          <div class="term-window contact-term-card">
+            <div class="term-bar">
+              <div class="term-dots">
+                <span class="term-dot dot-red"></span>
+                <span class="term-dot dot-yellow"></span>
+                <span class="term-dot dot-green"></span>
+              </div>
+              <span class="term-title">stdin &mdash; input prompt</span>
+            </div>
+
+            <div class="term-body">
+              <form class="cli-form" id="contactForm" novalidate>
+                <div class="cli-form-row">
+                  <div class="cli-input-group">
+                    <label for="name" class="cli-label">$ USER_NAME</label>
+                    <input type="text" id="name" name="name" class="cli-input" placeholder="e.g. Nguyen Van A" required>
+                  </div>
+                  <div class="cli-input-group">
+                    <label for="email" class="cli-label">$ USER_EMAIL</label>
+                    <input type="email" id="email" name="email" class="cli-input" placeholder="e.g. user@example.com" required>
+                  </div>
+                </div>
+
+                <div class="cli-input-group">
+                  <label for="recipient" class="cli-label">$ DISPATCH_TO</label>
+                  <select id="recipient" name="recipient" class="cli-select">
+                    <option value="both">--to="Tuấn Anh &amp; Hữu Hiệp" (Both)</option>
+                    <option value="anh">--to="Tuấn Anh" (Front-End Focus)</option>
+                    <option value="hiep">--to="Hữu Hiệp" (Database Focus)</option>
+                  </select>
+                </div>
+
+                <div class="cli-input-group">
+                  <label for="subject" class="cli-label">$ SUBJECT</label>
+                  <input type="text" id="subject" name="subject" class="cli-input" placeholder="Project Inquiry / Opportunity" required>
+                </div>
+
+                <div class="cli-input-group">
+                  <label for="message" class="cli-label">$ PAYLOAD_MESSAGE</label>
+                  <textarea id="message" name="message" class="cli-textarea" placeholder="Type your message here..." required></textarea>
+                </div>
+
+                <button type="submit" class="btn-cli btn-cli-primary" style="justify-content: center; padding: 0.75rem;">
+                  <span>./dispatch_payload.sh &gt;&gt; /dev/mail</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Project 1 Modal: Terminal Pager MAN(1) COUNTEROPS -->
+  <dialog id="modalProject1" class="modal" closedby="any" aria-labelledby="modalP1Title">
+    <div class="modal-inner">
+      <div class="modal-header">
+        <span id="modalP1Title" class="modal-title">MAN(1): COUNTEROPS &mdash; Restaurant Operations Platform</span>
+        <form method="dialog">
+          <button type="submit" class="modal-close-btn" aria-label="Close terminal buffer">[q / ESC]</button>
+        </form>
+      </div>
+
+      <div class="modal-body">
+        <div>
+          <div class="t-yellow t-bold">NAME</div>
+          <p>counterops &mdash; Store operations platform for cafes and restaurants (Sales, Kitchen, Inventory, AI Analytics).</p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">SYNOPSIS</div>
+          <p class="t-cyan">counterops [--pos-cashier] [--kitchen-kds] [--inventory-control] [--excel-sync] [--ai-rag] [--grab-mock]</p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">DESCRIPTION</div>
+          <p>
+            CounterOps is an end-to-end management platform designed for restaurant &amp; cafe environments. Features full POS with table/takeaway modes, Kitchen display system (KDS) order tracking, table and zone management, recipe-based menu items, inventory movement alerts, automated Excel import/export, and a GrabFood mock order simulator for capstone demonstration.
+          </p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">AI ASSISTANT &amp; TELEMETRY</div>
+          <p>
+            Features an AI analytics assistant built with hybrid RAG, intent planning, streaming responses, and circuit breakers, falling back to governed PostgreSQL RPCs when external model keys are absent.
+          </p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">DUO DIVISION OF RESPONSIBILITIES</div>
+          <div class="role-breakdown-box" style="margin-top: 0.5rem;">
+            <div class="role-entry">
+              <span class="role-label">Tuấn Anh (Front-End):</span>
+              <span>Built Next.js 14 App Router UI, cashier POS view, Kitchen KDS display, table layout grid, and shadcn/Tailwind responsive themes.</span>
+            </div>
+            <div class="role-entry">
+              <span class="role-label">Hữu Hiệp (Database):</span>
+              <span>Architected Supabase PostgreSQL schema, Row-Level Security (RLS) policies per organization/branch, pgvector embeddings, and negative stock triggers.</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">STACK &amp; TESTING</div>
+          <p>Next.js 14, React 18, TypeScript, Tailwind CSS, Supabase (PostgreSQL + RLS + pgvector), Vitest (all tests + AI-specific suite).</p>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <form method="dialog">
+          <button type="submit" class="btn-cli">q: Exit</button>
+        </form>
+        <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-cli btn-cli-primary">
+          git clone repo
+        </a>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Project 2 Modal: Terminal Pager MAN(1) VIETVOYAGE / TRAVEL_PLANNER -->
+  <dialog id="modalProject2" class="modal" closedby="any" aria-labelledby="modalP2Title">
+    <div class="modal-inner">
+      <div class="modal-header">
+        <span id="modalP2Title" class="modal-title">MAN(1): VIETVOYAGE &mdash; AI Landmark &amp; Travel Planning Platform</span>
+        <form method="dialog">
+          <button type="submit" class="modal-close-btn" aria-label="Close terminal buffer">[q / ESC]</button>
+        </form>
+      </div>
+
+      <div class="modal-body">
+        <div>
+          <div class="t-yellow t-bold">NAME</div>
+          <p>vietvoyage-travel &mdash; Computational-Thinking Vietnam travel planning backend API and web interface.</p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">SYNOPSIS</div>
+          <p class="t-cyan">travel-api [--landmark-ai] [--osm-pois] [--mongo-geo] [--trips-crud] [--rate-limit]</p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">DESCRIPTION</div>
+          <p>
+            VietVoyage provides an interactive travel planning interface and modular Flask backend API for discovering destinations across Vietnam. It features deep integration with OpenStreetMap (OSM) for provincial POI discovery (hotels, restaurants, attractions) and multi-day itinerary CRUD operations.
+          </p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">AI LANDMARK RECOGNITION &amp; SECURITY</div>
+          <p>
+            Users can upload photos to classify Vietnamese landmarks (e.g. Ha Long Bay, Da Nang, Hoi An). The backend features token-based authentication and smart IP rate limiting (10 req/60s window with automatic 5-minute unblocking and proxy detection).
+          </p>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">DUO DIVISION OF RESPONSIBILITIES</div>
+          <div class="role-breakdown-box" style="margin-top: 0.5rem;">
+            <div class="role-entry">
+              <span class="role-label">Tuấn Anh (Front-End):</span>
+              <span>Crafted travel website interface, multi-day itinerary builder, province POI explorer, and file-upload landmark prediction tester.</span>
+            </div>
+            <div class="role-entry">
+              <span class="role-label">Hữu Hiệp (Database &amp; API):</span>
+              <span>Designed MongoDB document schemas (Users, APITokens, Trips, POIs, Provinces) with 2dsphere geospatial indexing, MongoEngine ODM, and rate limiting middleware.</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="t-yellow t-bold">STACK &amp; ARCHITECTURE</div>
+          <p>Python (Flask modular blueprints), MongoDB with MongoEngine, OpenStreetMap GeoJSON, rate limiting security, and static API testing UI.</p>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <form method="dialog">
+          <button type="submit" class="btn-cli">q: Exit</button>
+        </form>
+        <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-cli btn-cli-primary">
+          git clone repo
+        </a>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Interactive Terminal Toast -->
+  <div class="toast" id="feedbackToast" role="alert" aria-live="polite">
+    <span class="toast-prefix">[OK 200]</span>
+    <span id="toastMessage">Payload received!</span>
+  </div>
+
+  <!-- Neovim / Tmux Bottom Statusline -->
+  <footer class="tmux-statusline">
+    <div class="tmux-left">
+      <span class="tmux-session">[0] hcmus-duo</span>
+      <span class="tmux-window">1:portfolio*</span>
+      <span class="t-muted">|</span>
+      <span>Tuấn Anh &amp; Hữu Hiệp &bull; CounterOps &amp; VietVoyage</span>
+    </div>
+    <div class="tmux-right">
+      <span>utf-8</span>
+      <span>zsh</span>
+      <span>HCMUS &copy; 2026</span>
+      <button class="back-to-top" id="backToTop" aria-label="Scroll back to top">[TOP &uarr;]</button>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

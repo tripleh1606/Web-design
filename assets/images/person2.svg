@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="100%" height="100%">
+  <defs>
+    <linearGradient id="p2-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+    <linearGradient id="p2-skin" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="p2-hair" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+  <!-- Background Circle -->
+  <circle cx="120" cy="120" r="110" fill="url(#p2-bg)" opacity="0.15"/>
+  <circle cx="120" cy="120" r="100" fill="url(#p2-bg)" opacity="0.25"/>
+
+  <!-- Body / Shoulders -->
+  <path d="M60 210 C60 170, 85 160, 120 160 C155 160, 180 170, 180 210 Z" fill="#0D9488"/>
+  <path d="M95 160 L120 185 L145 160 Z" fill="#047857" opacity="0.4"/>
+  <path d="M105 160 L120 175 L135 160 Z" fill="url(#p2-skin)"/>
+
+  <!-- Neck -->
+  <rect x="110" y="135" width="20" height="28" rx="4" fill="url(#p2-skin)"/>
+
+  <!-- Head -->
+  <ellipse cx="120" cy="115" rx="36" ry="42" fill="url(#p2-skin)"/>
+
+  <!-- Hair (short cropped modern style) -->
+  <path d="M84 105 C84 75, 100 68, 120 68 C142 68, 156 76, 156 102 C156 106, 154 110, 154 110 C150 94, 142 86, 120 86 C98 86, 90 94, 86 110 Z" fill="url(#p2-hair)"/>
+
+  <!-- Eyes & Eyebrows -->
+  <path d="M96 98 Q104 94 112 98" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M128 98 Q136 94 144 98" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="104" cy="108" r="3.5" fill="#0F172A"/>
+  <circle cx="136" cy="108" r="3.5" fill="#0F172A"/>
+
+  <!-- Smile -->
+  <path d="M112 134 Q120 142 128 134" fill="none" stroke="#B45309" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Modern Tech Badge Pin (Server/Database icon) -->
+  <circle cx="160" cy="180" r="14" fill="#3B82F6"/>
+  <path d="M154 176 C154 174, 166 174, 166 176 C166 178, 154 178, 154 176 Z M154 180 C154 178, 166 178, 166 180 C166 182, 154 182, 154 180 Z M154 184 C154 182, 166 182, 166 184 C166 186, 154 186, 154 184 Z" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
+</svg>

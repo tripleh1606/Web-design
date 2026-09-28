@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nhóm vibe coder</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="stage" aria-hidden="true">
+      <span class="blob blob-a"></span>
+      <span class="blob blob-b"></span>
+      <span class="blob blob-c"></span>
+      <span class="grain"></span>
+    </div>
+
+    <header class="top">
+      <a class="mark" href="#home">Nhóm</a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">
+        Mục
+      </button>
+      <nav id="site-nav" class="nav">
+        <a class="nav-link" href="#home">Trang chủ</a>
+        <a class="nav-link" href="#members">Thành viên</a>
+        <a class="nav-link" href="#projects">Dự án</a>
+        <a class="nav-link" href="#contact">Liên hệ</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="view-home" class="view">
+        <p class="kicker">Studio / 03 người</p>
+        <h1>
+          <span class="name-blank name-blank-lg" aria-label="Tên nhóm để trống"></span>
+        </h1>
+        <p class="poster">
+          Ba vibe coder. Ship giao diện, API và prototype trong cùng một đêm.
+          Tên nhóm để trống vì sản phẩm nói trước.
+        </p>
+        <div class="jumps">
+          <a class="jump" href="#members" data-open-member="1">
+            <span class="num">01</span>
+            <span>Prototype trước khi cà phê nguội</span>
+          </a>
+          <a class="jump" href="#members" data-open-member="2">
+            <span class="num">02</span>
+            <span>API ít endpoint, đúng nhịp</span>
+          </a>
+          <a class="jump" href="#members" data-open-member="3">
+            <span class="num">03</span>
+            <span>CSS là ngôn ngữ thiết kế</span>
+          </a>
+        </div>
+        <ul class="skills">
+          <li>TypeScript</li>
+          <li>React</li>
+          <li>Node</li>
+          <li>CSS</li>
+          <li>AI prototyping</li>
+        </ul>
+      </section>
+
+      <section id="view-members" class="view" hidden>
+        <p class="kicker">Thành viên</p>
+        <h2>Ba người, một nhịp ship</h2>
+        <div class="tablist" role="tablist" aria-label="Thành viên">
+          <button class="tab" id="tab-1" type="button" role="tab" aria-selected="true" aria-controls="panel-1" data-member="1" tabindex="0">
+            Thành viên 01
+          </button>
+          <button class="tab" id="tab-2" type="button" role="tab" aria-selected="false" aria-controls="panel-2" data-member="2" tabindex="-1">
+            Thành viên 02
+          </button>
+          <button class="tab" id="tab-3" type="button" role="tab" aria-selected="false" aria-controls="panel-3" data-member="3" tabindex="-1">
+            Thành viên 03
+          </button>
+        </div>
+
+        <article id="panel-1" class="panel" role="tabpanel" aria-labelledby="tab-1">
+          <p class="role">Vibe coder</p>
+          <span class="name-blank" aria-label="Tên để trống"></span>
+          <p class="tagline">Biến ý tưởng nửa đêm thành prototype trước khi cà phê nguội.</p>
+          <ul class="skills">
+            <li>React</li>
+            <li>TypeScript</li>
+            <li>Giao diện chuyển động</li>
+          </ul>
+          <div class="mini-projects">
+            <article>
+              <h3>Đêm Bếp Neon</h3>
+              <p>Ứng dụng nấu ăn theo mood, gợi ý món từ những gì còn trong tủ lạnh.</p>
+            </article>
+            <article>
+              <h3>Bàn Tín Hiệu</h3>
+              <p>Bảng tin một màn hình cho nhóm nhỏ. Hết việc là hết ồn.</p>
+            </article>
+          </div>
+        </article>
+
+        <article id="panel-2" class="panel" role="tabpanel" aria-labelledby="tab-2" hidden>
+          <p class="role">Vibe coder</p>
+          <span class="name-blank" aria-label="Tên để trống"></span>
+          <p class="tagline">API ít endpoint, đúng nhịp, không diễn thuyết.</p>
+          <ul class="skills">
+            <li>Node</li>
+            <li>Postgres</li>
+            <li>Hàm biên</li>
+          </ul>
+          <div class="mini-projects">
+            <article>
+              <h3>Sổ Túi</h3>
+              <p>Sổ chi tiêu nghe giọng nói rồi tự xếp hạng mục.</p>
+            </article>
+            <article>
+              <h3>Phòng Chuyển</h3>
+              <p>Phòng chat tạm. Tin nhắn tự xóa khi cuộc họp kết thúc.</p>
+            </article>
+          </div>
+        </article>
+
+        <article id="panel-3" class="panel" role="tabpanel" aria-labelledby="tab-3" hidden>
+          <p class="role">Vibe coder</p>
+          <span class="name-blank" aria-label="Tên để trống"></span>
+          <p class="tagline">CSS là ngôn ngữ thiết kế, không phải lớp sơn cuối.</p>
+          <ul class="skills">
+            <li>CSS</li>
+            <li>Khả năng truy cập</li>
+            <li>Design system</li>
+          </ul>
+          <div class="mini-projects">
+            <article>
+              <h3>Máy In Poster</h3>
+              <p>Xếp chữ poster ngay trên web, xuất một trang in.</p>
+            </article>
+            <article>
+              <h3>Form Yên</h3>
+              <p>Form dài chia nhịp để người dùng không bỏ giữa chừng.</p>
+            </article>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-projects" class="view" hidden>
+        <p class="kicker">Dự án</p>
+        <h2>Sáu bản ship giả, link để bạn dán sau</h2>
+        <div class="filters" role="group" aria-label="Lọc theo thành viên">
+          <button type="button" class="filter is-on" data-filter="all" aria-pressed="true">Tất cả</button>
+          <button type="button" class="filter" data-filter="1" aria-pressed="false">01</button>
+          <button type="button" class="filter" data-filter="2" aria-pressed="false">02</button>
+          <button type="button" class="filter" data-filter="3" aria-pressed="false">03</button>
+        </div>
+        <div class="grid">
+          <article class="card" data-member="1">
+            <p class="num">01</p>
+            <h3>Đêm Bếp Neon</h3>
+            <p>Nấu theo mood. Tủ lạnh trống vẫn ra được một bữa ra dáng.</p>
+            <a class="go" href="#">Xem dự án</a>
+          </article>
+          <article class="card" data-member="1">
+            <p class="num">01</p>
+            <h3>Bàn Tín Hiệu</h3>
+            <p>Một màn hình cho việc đang chạy. Không có feed, không có huy hiệu.</p>
+            <a class="go" href="#">Xem dự án</a>
+          </article>
+          <article class="card" data-member="2">
+            <p class="num">02</p>
+            <h3>Sổ Túi</h3>
+            <p>Nói một câu chi tiêu. Sổ tự ghi, tự gom, không mở form.</p>
+            <a class="go" href="#">Xem dự án</a>
+          </article>
+          <article class="card" data-member="2">
+            <p class="num">02</p>
+            <h3>Phòng Chuyển</h3>
+            <p>Chat cho một cuộc họp. Tan họp, phòng biến mất.</p>
+            <a class="go" href="#">Xem dự án</a>
+          </article>
+          <article class="card" data-member="3">
+            <p class="num">03</p>
+            <h3>Máy In Poster</h3>
+            <p>Kéo chữ, khóa lưới, in một poster không cần phần mềm khác.</p>
+            <a class="go" href="#">Xem dự án</a>
+          </article>
+          <article class="card" data-member="3">
+            <p class="num">03</p>
+            <h3>Form Yên</h3>
+            <p>Form nhiều bước, mỗi bước một câu. Người dùng đi hết.</p>
+            <a class="go" href="#">Xem dự án</a>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-contact" class="view" hidden>
+        <p class="kicker">Liên hệ</p>
+        <h2>Gửi một lời nhắn demo</h2>
+        <div class="contact">
+          <form id="contact-form" novalidate>
+            <label>
+              Tên
+              <input name="name" type="text" autocomplete="name" />
+              <span class="error" data-error="name"></span>
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" autocomplete="email" />
+              <span class="error" data-error="email"></span>
+            </label>
+            <label>
+              Lời nhắn
+              <textarea name="message" rows="5"></textarea>
+              <span class="error" data-error="message"></span>
+            </label>
+            <button class="send" type="submit">Gửi</button>
+            <p id="form-status" class="status" role="status"></p>
+          </form>
+          <aside class="social">
+            <p>Ba kênh. Link thật bạn dán sau.</p>
+            <a href="#">GitHub</a>
+            <a href="#">Email</a>
+            <a href="#">X</a>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

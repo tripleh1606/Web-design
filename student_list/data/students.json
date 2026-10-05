@@ -1,0 +1,39 @@
+[
+  {
+    "id": 1,
+    "name": "Nguyễn Minh Anh",
+    "email": "minhanh@example.com"
+  },
+  {
+    "id": 2,
+    "name": "Trần Hoàng Nam",
+    "email": "hoangnam@example.com"
+  },
+  {
+    "id": 3,
+    "name": "Lê Thu Hà",
+    "email": "thuha@example.com"
+  },
+  {
+    "id": 4,
+    "name": "Nguyễn Hữu Nhật Minh",
+    "email": "nguyenhuunhatm@gmail.com"
+  },
+  {
+    "id": 6,
+    "name": "Minh Nguyễn Hữu Nhật",
+    "email": "nhnminh2406@clc.fitus.edu.vn"
+  },
+  {
+    "id": 7,
+    "studentId": "24127203",
+    "name": "Minh Nguyễn Hữu Nhật",
+    "email": "nhnminh2406@clc.fditus.edu.vn"
+  },
+  {
+    "id": 8,
+    "studentId": "24127203",
+    "name": "ư",
+    "email": "n@gmail.com"
+  }
+]

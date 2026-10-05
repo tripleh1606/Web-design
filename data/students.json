@@ -1,0 +1,38 @@
+[
+  {
+    "id": "1",
+    "name": "Tuấn Anh",
+    "role": "Front-End Developer",
+    "badge": "HCMUS Undergraduate Student",
+    "bio": "Undergraduate student at HCMUS. Passionate about Next.js, React, modern CSS, and component systems. Built the POS cashier interface & Kitchen KDS for CounterOps, as well as the interactive travel planning interface for VietVoyage.",
+    "stack": [
+      "Next.js 14 / React",
+      "TypeScript",
+      "Tailwind CSS",
+      "HTML5 / CSS3",
+      "Git"
+    ],
+    "avatar": "assets/images/person1.svg",
+    "term_title": "tuananh@hcmus: ~/frontend",
+    "term_tag": "FE-DEV",
+    "email": "tuananh@hcmus.edu.vn"
+  },
+  {
+    "id": "2",
+    "name": "Hữu Hiệp",
+    "role": "Database & Backend Developer",
+    "badge": "HCMUS Undergraduate Student",
+    "bio": "Undergraduate student at HCMUS. Focuses on PostgreSQL & MongoDB data modeling, Supabase RLS security, pgvector embeddings for AI RAG, geospatial 2dsphere indexing, and token-based rate-limited APIs.",
+    "stack": [
+      "PostgreSQL (Supabase)",
+      "MongoDB (MongoEngine)",
+      "Python (Flask)",
+      "Row-Level Security (RLS)",
+      "Git"
+    ],
+    "avatar": "assets/images/person2.svg",
+    "term_title": "huuhiep@hcmus: ~/database",
+    "term_tag": "DB-DEV",
+    "email": "huuhiep@hcmus.edu.vn"
+  }
+]

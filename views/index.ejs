@@ -240,103 +240,109 @@
             <span class="t-yellow">ls -la</span>
             <span class="t-cyan">./team/</span>
           </div>
-          <h2 class="section-title">The 2 People</h2>
+          <h2 class="section-title">The <%= students ? students.length : 0 %> People</h2>
         </div>
 
         <div class="team-grid">
-          <!-- Member 1: Tuấn Anh -->
-          <div class="term-window member-term-card">
+          <% if (students && students.length > 0) { %>
+            <% students.forEach(function(student) { %>
+              <div class="term-window member-term-card">
+                <div class="term-bar">
+                  <div class="term-dots">
+                    <span class="term-dot dot-red"></span>
+                    <span class="term-dot dot-yellow"></span>
+                    <span class="term-dot dot-green"></span>
+                  </div>
+                  <span class="term-title"><%= student.term_title %></span>
+                  <span class="t-cyan"><%= student.term_tag %></span>
+                </div>
+
+                <div class="term-body">
+                  <div class="member-top-row">
+                    <img src="<%= student.avatar %>" alt="<%= student.name %>" class="member-avatar-sm">
+                    <div>
+                      <h3 class="member-name-heading"><%= student.name %></h3>
+                      <div class="t-cyan t-bold"><%= student.role %></div>
+                      <div class="member-badge-hcmus"><%= student.badge %></div>
+                    </div>
+                  </div>
+
+                  <div class="member-bio-text">
+                    <%= student.bio %>
+                  </div>
+
+                  <div>
+                    <div class="term-subhead">$ echo $TECH_STACK</div>
+                    <div class="term-tag-list">
+                      <% student.stack.forEach(function(tech) { %>
+                        <span class="term-tag"><%= tech %></span>
+                      <% }) %>
+                    </div>
+                  </div>
+
+                  <div class="member-links-row">
+                    <div class="cli-link-group">
+                      <a href="https://github.com" target="_blank" rel="noopener noreferrer">[GitHub]</a>
+                      <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">[LinkedIn]</a>
+                      <a href="mailto:<%= student.email %>">[Email: <%= student.email %>]</a>
+                    </div>
+                    <span class="t-green"><span class="status-dot-pulse"></span> status: active</span>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          <% } %>
+        </div>
+
+        <div id="team-form-section" style="margin-top: 2rem;">
+          <div class="term-window contact-term-card">
             <div class="term-bar">
               <div class="term-dots">
                 <span class="term-dot dot-red"></span>
                 <span class="term-dot dot-yellow"></span>
                 <span class="term-dot dot-green"></span>
               </div>
-              <span class="term-title">tuananh@hcmus: ~/frontend</span>
-              <span class="t-cyan">FE-DEV</span>
+              <span class="term-title">add_member.sh &mdash; input prompt</span>
             </div>
 
             <div class="term-body">
-              <div class="member-top-row">
-                <img src="assets/images/person1.svg" alt="Tuấn Anh" class="member-avatar-sm">
-                <div>
-                  <h3 class="member-name-heading">Tuấn Anh</h3>
-                  <div class="t-cyan t-bold">Front-End Developer</div>
-                  <div class="member-badge-hcmus">HCMUS Undergraduate Student</div>
+              <div class="t-cyan t-bold" style="margin-bottom: 1rem;"># Add a Teammate</div>
+              <% if (error) { %>
+                <div class="t-yellow t-bold" style="margin-bottom: 1rem;">[!] Error: <%= error %></div>
+              <% } %>
+              
+              <form class="cli-form" action="/students" method="POST" novalidate aria-labelledby="add-student-title">
+                <h3 id="add-student-title" class="sr-only" style="display:none;">Add Student Form</h3>
+                
+                <div class="cli-form-row">
+                  <div class="cli-input-group">
+                    <label for="student_name" class="cli-label">$ NAME <span aria-hidden="true">*</span></label>
+                    <input type="text" id="student_name" name="name" class="cli-input" placeholder="e.g. Nguyen Van A" required>
+                  </div>
+                  <div class="cli-input-group">
+                    <label for="student_role" class="cli-label">$ ROLE <span aria-hidden="true">*</span></label>
+                    <input type="text" id="student_role" name="role" class="cli-input" placeholder="e.g. Backend Developer" required>
                 </div>
-              </div>
 
-              <div class="member-bio-text">
-                Undergraduate student at HCMUS. Passionate about Next.js, React, modern CSS, and component systems. Built the POS cashier interface &amp; Kitchen KDS for CounterOps, as well as the interactive travel planning interface for VietVoyage.
-              </div>
-
-              <div>
-                <div class="term-subhead">$ echo $TECH_STACK</div>
-                <div class="term-tag-list">
-                  <span class="term-tag">Next.js 14 / React</span>
-                  <span class="term-tag">TypeScript</span>
-                  <span class="term-tag">Tailwind CSS</span>
-                  <span class="term-tag">HTML5 / CSS3</span>
-                  <span class="term-tag">Git</span>
+                <div class="cli-input-group">
+                  <label for="student_email" class="cli-label">$ EMAIL <span aria-hidden="true">*</span></label>
+                  <input type="email" id="student_email" name="email" class="cli-input" placeholder="e.g. user@example.com" required>
                 </div>
-              </div>
 
-              <div class="member-links-row">
-                <div class="cli-link-group">
-                  <a href="https://github.com" target="_blank" rel="noopener noreferrer">[GitHub]</a>
-                  <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">[LinkedIn]</a>
-                  <a href="mailto:tuananh.fit@gmail.com">[Email]</a>
+                <div class="cli-input-group">
+                  <label for="student_bio" class="cli-label">$ BIO <span aria-hidden="true">*</span></label>
+                  <textarea id="student_bio" name="bio" class="cli-textarea" placeholder="Type your bio here..." required></textarea>
                 </div>
-                <span class="t-green"><span class="status-dot-pulse"></span> status: active</span>
-              </div>
-            </div>
-          </div>
 
-          <!-- Member 2: Hữu Hiệp -->
-          <div class="term-window member-term-card">
-            <div class="term-bar">
-              <div class="term-dots">
-                <span class="term-dot dot-red"></span>
-                <span class="term-dot dot-yellow"></span>
-                <span class="term-dot dot-green"></span>
-              </div>
-              <span class="term-title">huuhiep@hcmus: ~/database</span>
-              <span class="t-yellow">DB-DEV</span>
-            </div>
-
-            <div class="term-body">
-              <div class="member-top-row">
-                <img src="assets/images/person2.svg" alt="Hữu Hiệp" class="member-avatar-sm">
-                <div>
-                  <h3 class="member-name-heading">Hữu Hiệp</h3>
-                  <div class="t-yellow t-bold">Database &amp; Backend Developer</div>
-                  <div class="member-badge-hcmus">HCMUS Undergraduate Student</div>
+                <div class="cli-input-group">
+                  <label for="student_tech" class="cli-label">$ TECH_STACK (comma separated)</label>
+                  <input type="text" id="student_tech" name="tech_stack" class="cli-input" placeholder="e.g. React, Node.js, MongoDB">
                 </div>
-              </div>
 
-              <div class="member-bio-text">
-                Undergraduate student at HCMUS. Focuses on PostgreSQL &amp; MongoDB data modeling, Supabase RLS security, pgvector embeddings for AI RAG, geospatial 2dsphere indexing, and token-based rate-limited APIs.
-              </div>
-
-              <div>
-                <div class="term-subhead">$ echo $TECH_STACK</div>
-                <div class="term-tag-list">
-                  <span class="term-tag">PostgreSQL (Supabase)</span>
-                  <span class="term-tag">MongoDB (MongoEngine)</span>
-                  <span class="term-tag">Python (Flask)</span>
-                  <span class="term-tag">Row-Level Security (RLS)</span>
-                  <span class="term-tag">Git</span>
-                </div>
-              </div>
-
-              <div class="member-links-row">
-                <div class="cli-link-group">
-                  <a href="https://github.com" target="_blank" rel="noopener noreferrer">[GitHub]</a>
-                  <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">[LinkedIn]</a>
-                  <a href="mailto:huuhiep.fit@gmail.com">[Email]</a>
-                </div>
-                <span class="t-green"><span class="status-dot-pulse"></span> status: active</span>
-              </div>
+                <button type="submit" class="btn-cli btn-cli-primary" style="justify-content: center; padding: 0.75rem;">
+                  <span>./add_member.sh</span>
+                </button>
+              </form>
             </div>
           </div>
         </div>

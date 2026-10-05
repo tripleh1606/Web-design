@@ -1,0 +1,26 @@
+{
+  "name": "portfolio",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tuananh8626/Web-design.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/tuananh8626/Web-design/issues"
+  },
+  "homepage": "https://github.com/tuananh8626/Web-design#readme",
+  "dependencies": {
+    "ejs": "^7.0.1",
+    "express": "^5.2.1"
+  }
+}

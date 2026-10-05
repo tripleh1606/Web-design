@@ -1,0 +1,18 @@
+<%
+  const hasId = String(student.studentId || '').trim().length > 0;
+  const words = String(student.name || '').trim().split(/\s+/);
+  const initials = words.length > 1 ? words[0].charAt(0) + words[words.length - 1].charAt(0) : words[0].slice(0, 2);
+%>
+<div class="student-row<%= created ? ' is-new' : '' %>" data-reveal data-record-id="<%= student.id %>" data-name="<%= student.name %>" data-student-id="<%= student.studentId || '' %>" data-email="<%= student.email %>">
+  <article class="student-card" id="student-<%= student.id %>" tabindex="-1" data-tilt-card>
+    <span class="student-avatar" data-initials aria-hidden="true"><%= initials.toUpperCase() || '?' %></span>
+    <div class="student-info">
+      <h3 data-name-label><%= student.name %></h3>
+      <p class="student-code<%= hasId ? '' : ' is-missing' %>" data-code-label><%= hasId ? 'MSSV · ' + student.studentId : 'Chưa có MSSV' %></p>
+      <a class="student-email" href="mailto:<%= encodeURIComponent(student.email || '') %>" data-email-link>
+        <%- include('icon', { name: 'mail' }) %><span data-email-label><%= student.email %></span>
+      </a>
+    </div>
+    <span class="record-number" data-record-label aria-label="Số hồ sơ <%= student.id %>">#<%= String(student.id).padStart(3, '0') %></span>
+  </article>
+</div>

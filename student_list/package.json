@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "node --test --test-isolation=none tests/*.test.js"
   },
   "keywords": [],
   "author": "",
@@ -14,5 +15,8 @@
     "ejs": "^7.0.1",
     "express": "^5.2.1",
     "validator": "^13.15.35"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

@@ -7,7 +7,9 @@
   <meta name="theme-color" content="#050816">
   <title>Danh bạ sinh viên · Academia</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <script src="/app.js" defer></script>
+  <script type="module" src="/scene3d.js"></script>
 </head>
 <body data-error-field="<%= errorField || '' %>" data-created-id="<%= createdStudentId || '' %>">
   <a class="skip-link" href="#student-list">Đi đến danh sách sinh viên</a>
@@ -16,6 +18,7 @@
     <div class="page-grid"></div>
   </div>
   <div class="cursor-light" aria-hidden="true"></div>
+  <div class="webgl-scene" aria-hidden="true"><canvas id="scene-canvas"></canvas></div>
 
   <header class="site-header">
     <div class="header-inner page-shell">
@@ -24,9 +27,10 @@
         <span class="brand-name">Academia<span>.</span><small>Không gian sinh viên</small></span>
       </a>
       <nav class="main-nav" aria-label="Điều hướng chính">
-        <a href="#overview" class="overview-link">Tổng quan</a>
-        <a href="#student-list">Danh sách</a>
-        <a class="nav-add" href="#student-form"><%- include('partials/icon', { name: 'plus' }) %><span>Thêm sinh viên</span></a>
+        <div class="scene-nav" aria-label="Chuyển giữa tổng quan và danh sách">
+          <a href="#overview" class="scene-link is-current" data-scene-link="overview" aria-current="location">Tổng quan</a>
+          <a href="#student-list" class="scene-link" data-scene-link="list">Danh sách</a>
+        </div>
       </nav>
     </div>
   </header>
@@ -40,10 +44,6 @@
         <div class="eyebrow"><span class="status-dot" aria-hidden="true"></span>Nơi những kết nối bắt đầu</div>
         <h1 id="page-title"><span class="title-line"><span class="title-word">Danh bạ</span></span><span class="title-line"><span class="title-word gradient-text">sinh viên<span class="title-period">.</span></span></span></h1>
         <p class="hero-description">Mỗi hồ sơ là một kết nối.<br>Quản lý, tìm kiếm và mở rộng danh bạ của bạn — tất cả tại một nơi.</p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="#student-list">Xem danh sách<%- include('partials/icon', { name: 'arrow' }) %></a>
-          <a class="button button-secondary" href="#student-form"><%- include('partials/icon', { name: 'plus' }) %>Thêm sinh viên</a>
-        </div>
         <div class="hero-caption"><span class="caption-line" aria-hidden="true"></span>Thông tin rõ ràng. Kết nối dễ dàng.</div>
       </div>
 
@@ -62,23 +62,39 @@
           <span class="orbit-coordinate coordinate-bottom" aria-hidden="true">HỒ SƠ · KẾT NỐI · TƯƠNG LAI</span>
         </div>
       </div>
-      <a class="scroll-cue" href="#dashboard"><span>Khám phá danh bạ</span><%- include('partials/icon', { name: 'down' }) %></a>
+      <a class="scroll-cue" href="#journey"><span>Khám phá danh bạ</span><%- include('partials/icon', { name: 'down' }) %></a>
+    </section>
+
+    <section class="scene-bridge" id="journey" aria-labelledby="bridge-title">
+      <span class="bridge-beam" aria-hidden="true"></span>
+      <div class="bridge-thread" aria-hidden="true"><span class="bridge-thread-node"></span></div>
+      <div class="bridge-copy">
+        <span class="section-kicker">02 / Từ hồ sơ đến bức tranh chung</span>
+        <h2 id="bridge-title"><span class="bridge-line"><span>Mỗi hồ sơ là một người.</span></span><span class="bridge-line"><span>Cùng nhau thành một lớp học.</span></span></h2>
+        <p>Nhìn từng kết nối, rồi nhìn toàn bộ danh bạ — mọi thông tin đều có chỗ của mình.</p>
+        <div class="bridge-words" aria-hidden="true"><span class="bridge-word">Từng gương mặt.</span><span class="bridge-word">Những hồ sơ đầu tiên.</span><span class="bridge-word">Trang đầu tiên.</span></div>
+      </div>
+      <div class="bridge-count">
+        <span class="bridge-count-label">Đang kết nối</span>
+        <strong data-total><%= directoryUnavailable ? '—' : String(summary.total).padStart(2, '0') %></strong>
+        <span class="bridge-count-unit">hồ sơ sinh viên</span>
+      </div>
     </section>
 
     <section class="dashboard" id="dashboard" aria-label="Tổng quan danh bạ">
-      <div class="dashboard-intro" data-reveal><span class="section-kicker">Không gian của bạn</span><p>Một góc nhìn. Mọi hồ sơ.</p></div>
+      <div class="dashboard-intro"><span class="section-kicker">Không gian của bạn</span><p>Một góc nhìn. Mọi hồ sơ.</p></div>
       <div class="stats-grid">
-        <div class="stat-tile" data-reveal><div class="stat-surface stat-total">
+        <div class="stat-tile"><div class="stat-surface stat-total">
           <div class="stat-heading"><span>Tổng sinh viên</span><span class="stat-icon"><%- include('partials/icon', { name: 'users' }) %></span></div>
           <strong class="stat-number" data-total><%= directoryUnavailable ? '—' : String(summary.total).padStart(2, '0') %></strong>
           <p>Những kết nối trong danh bạ</p>
         </div></div>
-        <div class="stat-tile" data-reveal><div class="stat-surface">
+        <div class="stat-tile"><div class="stat-surface">
           <div class="stat-heading"><span>Đã có MSSV</span><span class="stat-icon"><%- include('partials/icon', { name: 'id' }) %></span></div>
           <strong class="stat-number" data-with-id><%= directoryUnavailable ? '—' : String(summary.withStudentId).padStart(2, '0') %></strong>
           <p>Hồ sơ đã có mã số sinh viên</p>
         </div></div>
-        <div class="stat-tile" data-reveal><div class="stat-surface">
+        <div class="stat-tile"><div class="stat-surface">
           <div class="stat-heading"><span>Chưa có MSSV</span><span class="stat-icon stat-icon-pending"><%- include('partials/icon', { name: 'pending' }) %></span></div>
           <strong class="stat-number" data-missing-id><%= directoryUnavailable ? '—' : String(summary.missingStudentId).padStart(2, '0') %></strong>
           <p>Thông tin cần được bổ sung</p>
@@ -105,6 +121,12 @@
           <div class="student-list" id="student-rows">
             <% students.forEach(student => { %><%- include('partials/student', { student, created: student.id === createdStudentId }) %><% }); %>
           </div>
+          <nav class="directory-pagination" id="directory-pagination" aria-label="Các trang danh bạ" hidden>
+            <button type="button" class="page-step" data-page-step="-1" aria-label="Trang trước">← <span>Trước</span></button>
+            <div class="page-numbers" id="page-numbers"></div>
+            <button type="button" class="page-step" data-page-step="1" aria-label="Trang sau"><span>Sau</span> →</button>
+            <span class="page-status" id="page-status" role="status" aria-live="polite"></span>
+          </nav>
           <div class="empty-state" id="directory-empty"<%= students.length || directoryUnavailable ? ' hidden' : '' %>><span class="empty-symbol"><%- include('partials/icon', { name: 'graduation' }) %></span><h3>Một danh bạ mới bắt đầu</h3><p>Thêm sinh viên đầu tiên để tạo kết nối đầu tiên.</p><a class="button button-secondary" href="#student-form"><%- include('partials/icon', { name: 'plus' }) %>Thêm sinh viên</a></div>
           <div class="empty-state" id="search-empty" hidden><span class="empty-symbol"><%- include('partials/icon', { name: 'search' }) %></span><h3>Chưa tìm thấy hồ sơ</h3><p>Thử tên khác hoặc xóa bộ lọc để xem toàn bộ danh bạ.</p><button class="button button-secondary" type="button" id="reset-search">Xóa tìm kiếm và bộ lọc</button></div>
           <p class="directory-footer" id="result-count" role="status" aria-live="polite"><%= directoryUnavailable ? 'Chưa tải được danh sách.' : 'Hiển thị ' + students.length + ' / ' + students.length + ' sinh viên' %></p>

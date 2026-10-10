@@ -20,14 +20,27 @@
     const fine = window.matchMedia('(hover: hover) and (pointer: fine)');
     const desktop = window.matchMedia('(min-width: 1024px)');
     const hero = document.querySelector('.hero');
+    const bridge = document.querySelector('.scene-bridge');
+    const dashboard = document.querySelector('.dashboard');
+    const directory = document.getElementById('student-list');
+    const sceneNav = document.querySelector('.scene-nav');
+    const sceneLinks = sceneNav ? sceneNav.querySelectorAll('[data-scene-link]') : [];
     const depth = document.querySelector('.hero-depth');
     const orbit = document.querySelector('.orbit-parallax');
+    const orbitStage = document.querySelector('.orbit-stage');
+    const bridgeWords = bridge ? bridge.querySelectorAll('.bridge-word') : [];
+    const statTiles = dashboard ? dashboard.querySelectorAll('.stat-tile') : [];
     const light = document.querySelector('.cursor-light');
     const activeAnimations = new Set();
     const revealed = new WeakSet();
     const targetElements = new WeakSet();
     const targets = [];
     const ease = 'cubic-bezier(.22, 1, .36, 1)';
+    const clamp = value => Math.max(0, Math.min(1, value));
+    const smooth = (start, end, value) => {
+      const t = clamp((value - start) / (end - start));
+      return t * t * (3 - 2 * t);
+    };
     let frame = null;
     let pointerX = 0;
     let pointerY = 0;
@@ -48,6 +61,8 @@
     }
     function reveal(element, duration = 450, delay = 0) {
       revealed.add(element);
+      // The WebGL scroll story already brings this panel out of the directory.
+      if (element.classList.contains('form-panel') && document.body.classList.contains('has-webgl')) return;
       animate(element, [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'translateY(0)' }], duration, delay);
     }
     const observer = typeof window.IntersectionObserver === 'function'
@@ -66,10 +81,41 @@
     function schedule() {
       if (frame === null && !document.hidden && !reduced.matches) frame = window.requestAnimationFrame(render);
     }
+    function updateSceneNavigation(directoryTop, dashboardTop) {
+      if (!directory || !sceneNav) return;
+      const viewport = window.innerHeight || 800;
+      const start = viewport * .82;
+      const end = viewport * .36;
+      const progress = clamp((start - (directoryTop ?? directory.getBoundingClientRect().top)) / (start - end));
+      sceneNav.style.setProperty('--scene-progress', progress.toFixed(3));
+      const current = progress >= .5 ? 'list' : 'overview';
+      for (const link of sceneLinks) {
+        const active = link.dataset.sceneLink === current;
+        link.classList.toggle('is-current', active);
+        if (active) link.setAttribute('aria-current', 'location');
+        else link.removeAttribute('aria-current');
+      }
+      if (reduced.matches) return;
+      directory.style.setProperty('--directory-progress', progress.toFixed(3));
+      directory.style.setProperty('--directory-y', ((1 - progress) * 26).toFixed(1) + 'px');
+      directory.style.setProperty('--directory-opacity', (.55 + progress * .45).toFixed(3));
+      if (dashboard) {
+        const arrival = clamp((viewport * .88 - (dashboardTop ?? dashboard.getBoundingClientRect().top)) / (viewport * .38));
+        dashboard.style.setProperty('--dashboard-y', ((1 - arrival) * 32).toFixed(1) + 'px');
+        dashboard.style.setProperty('--dashboard-opacity', (.68 + arrival * .32).toFixed(3));
+        for (let i = 0; i < statTiles.length; i++) {
+          const progress = smooth(i * .14, .9, arrival);
+          const distance = desktop.matches ? 26 : 12;
+          statTiles[i].style.setProperty('--tile-x', ((i - 1) * distance * (1 - progress)).toFixed(1) + 'px');
+          statTiles[i].style.setProperty('--tile-y', ((24 + i * 7) * (1 - progress)).toFixed(1) + 'px');
+          statTiles[i].style.setProperty('--tile-opacity', (.78 + progress * .22).toFixed(3));
+        }
+      }
+    }
     function render() {
       frame = null;
       // Batch geometry reads before writes and reuse bounds between events.
-      if (hero && desktop.matches && heroVisible && !heroBounds) {
+      if (hero && heroVisible && !heroBounds) {
         const bounds = hero.getBoundingClientRect();
         heroBounds = { top: bounds.top + scrollY, height: bounds.height };
       }
@@ -77,11 +123,55 @@
         const target = targets[i];
         if (target.active && !target.focused && !target.bounds) target.bounds = target.element.getBoundingClientRect();
       }
-      if (desktop.matches && heroVisible && heroBounds) {
-        const progress = Math.max(0, Math.min(1, (scrollY - heroBounds.top) / Math.max(1, heroBounds.height)));
-        if (depth) depth.style.transform = 'translate3d(0,' + progress * 32 + 'px,0)';
-        if (orbit) orbit.style.transform = 'translate3d(0,' + progress * 56 + 'px,0)';
+      const bridgeBounds = bridge ? bridge.getBoundingClientRect() : null;
+      const directoryTop = directory ? directory.getBoundingClientRect().top : null;
+      const dashboardTop = dashboard ? dashboard.getBoundingClientRect().top : null;
+      if (heroVisible && heroBounds) {
+        const progress = clamp((scrollY - heroBounds.top) / Math.max(1, heroBounds.height));
+        hero.style.setProperty('--hero-copy-y', (-progress * 28).toFixed(1) + 'px');
+        hero.style.setProperty('--hero-copy-opacity', (1 - progress * .24).toFixed(3));
+        if (orbitStage) {
+          orbitStage.style.setProperty('--orbit-stage-x', (progress * 24).toFixed(1) + 'px');
+          orbitStage.style.setProperty('--orbit-stage-y', (-progress * 18).toFixed(1) + 'px');
+          orbitStage.style.setProperty('--orbit-stage-scale', (1 - progress * .1).toFixed(3));
+        }
+        if (desktop.matches) {
+          if (depth) depth.style.transform = 'translate3d(0,' + progress * 32 + 'px,0)';
+          if (orbit) orbit.style.transform = 'translate3d(0,' + progress * 56 + 'px,0)';
+        }
       }
+      if (bridge && bridgeBounds) {
+        const viewport = window.innerHeight || 800;
+        const progress = clamp((viewport * .85 - bridgeBounds.top) / (viewport * .65));
+        const reveal = smooth(.04, .92, progress);
+        const first = Math.max(0, Math.min(1, (progress - .08) / .42));
+        const second = Math.max(0, Math.min(1, (progress - .34) / .48));
+        const note = Math.max(0, Math.min(1, (progress - .58) / .34));
+        bridge.style.setProperty('--bridge-thread', progress.toFixed(3));
+        bridge.style.setProperty('--bridge-reveal', reveal.toFixed(3));
+        bridge.style.setProperty('--bridge-first', first.toFixed(3));
+        bridge.style.setProperty('--bridge-first-y', (1 - first) * 34 + 'px');
+        bridge.style.setProperty('--bridge-second', second.toFixed(3));
+        bridge.style.setProperty('--bridge-second-y', (1 - second) * 38 + 'px');
+        bridge.style.setProperty('--bridge-note', note.toFixed(3));
+        bridge.style.setProperty('--bridge-note-y', (1 - note) * 16 + 'px');
+        bridge.style.setProperty('--bridge-count-y', (1 - progress) * -28 + 'px');
+        bridge.style.setProperty('--bridge-count-scale', (.88 + progress * .12).toFixed(3));
+        bridge.style.setProperty('--beam-x', (progress * bridgeBounds.width * .5).toFixed(1) + 'px');
+        bridge.style.setProperty('--beam-opacity', (.25 + progress * .45).toFixed(3));
+        const strengths = [
+          1 - smooth(.16, .4, progress),
+          smooth(.18, .43, progress) * (1 - smooth(.58, .82, progress)),
+          smooth(.6, .84, progress),
+        ];
+        for (let i = 0; i < bridgeWords.length; i++) {
+          const word = bridgeWords[i];
+          word.style.setProperty('--word-opacity', strengths[i].toFixed(3));
+          word.style.setProperty('--word-x', ((i === 0 ? -progress : i === 1 ? .5 - progress : 1 - progress) * 22).toFixed(1) + 'px');
+          word.style.setProperty('--word-y', ((i === 0 ? -progress : i === 1 ? .5 - progress : 1 - progress) * 18).toFixed(1) + 'px');
+        }
+      }
+      updateSceneNavigation(directoryTop, dashboardTop);
       if (fine.matches && pointerVisible && light) {
         light.style.transform = 'translate3d(' + (pointerX - 270) + 'px,' + (pointerY - 270) + 'px,0)';
         document.body.classList.add('has-pointer');
@@ -173,8 +263,8 @@
     }, { passive: true });
     document.addEventListener('pointerout', event => { if (event.relatedTarget === null) resetPointer(); }, { passive: true });
     window.addEventListener('blur', resetPointer);
-    window.addEventListener('resize', invalidate, { passive: true });
-    window.addEventListener('scroll', () => { scrollY = window.scrollY; invalidate(); }, { passive: true, capture: true });
+    window.addEventListener('resize', () => { invalidate(); if (reduced.matches) updateSceneNavigation(); }, { passive: true });
+    window.addEventListener('scroll', () => { scrollY = window.scrollY; if (reduced.matches) updateSceneNavigation(); else schedule(); }, { passive: true, capture: true });
 
     function preferencesChanged() {
       resetPointer();
@@ -185,6 +275,18 @@
       if (!desktop.matches || reduced.matches) {
         if (depth) depth.style.removeProperty('transform');
         if (orbit) orbit.style.removeProperty('transform');
+      }
+      if (bridge && reduced.matches) {
+        for (const name of ['--bridge-thread', '--bridge-reveal', '--bridge-first', '--bridge-first-y', '--bridge-second', '--bridge-second-y', '--bridge-note', '--bridge-note-y', '--bridge-count-y', '--bridge-count-scale', '--beam-x', '--beam-opacity']) bridge.style.removeProperty(name);
+        for (const word of bridgeWords) for (const name of ['--word-opacity', '--word-x', '--word-y']) word.style.removeProperty(name);
+      }
+      if (reduced.matches) {
+        if (hero) for (const name of ['--hero-copy-y', '--hero-copy-opacity']) hero.style.removeProperty(name);
+        if (orbitStage) for (const name of ['--orbit-stage-x', '--orbit-stage-y', '--orbit-stage-scale']) orbitStage.style.removeProperty(name);
+        if (dashboard) for (const name of ['--dashboard-y', '--dashboard-opacity']) dashboard.style.removeProperty(name);
+        for (const tile of statTiles) for (const name of ['--tile-x', '--tile-y', '--tile-opacity']) tile.style.removeProperty(name);
+        if (directory) for (const name of ['--directory-progress', '--directory-y', '--directory-opacity']) directory.style.removeProperty(name);
+        updateSceneNavigation();
       }
       invalidate();
     }
@@ -222,7 +324,8 @@
       animate(document.querySelector('.hero-visual'), [{ opacity: 0, transform: 'scale(.88) rotate(-6deg)' }, { opacity: 1, transform: 'scale(1) rotate(0)' }], 900, 250);
       animate(document.querySelector('.hero-description'), [{ opacity: .3, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }], 500, 300);
     }
-    schedule();
+    if (reduced.matches) updateSceneNavigation();
+    else schedule();
     return {
       register,
       reveal,
@@ -239,6 +342,9 @@
   const search = document.getElementById('student-search');
   const filters = document.querySelectorAll('[data-filter]');
   const resultCount = document.getElementById('result-count');
+  const pagination = document.getElementById('directory-pagination');
+  const pageNumbers = document.getElementById('page-numbers');
+  const pageStatus = document.getElementById('page-status');
   const directoryEmpty = document.getElementById('directory-empty');
   const searchEmpty = document.getElementById('search-empty');
   const feedback = document.getElementById('form-feedback');
@@ -252,37 +358,169 @@
     row, name: row.dataset.name, studentId: row.dataset.studentId, email: row.dataset.email,
   }));
   let filter = 'all';
+  const pageSize = 5;
+  let page = 1;
   let busy = false;
   let successTimer;
   const motion = createMotion();
+  const preview = createPreviews();
 
+  function createPreviews() {
+    const fine = window.matchMedia('(hover: hover) and (pointer: fine)');
+    let active = null;
+    let restoringFocus = false;
+    function hide(card) {
+      if (!card) return;
+      card.querySelector('.student-preview').hidden = true;
+      card.querySelector('.preview-trigger').setAttribute('aria-expanded', 'false');
+      card.classList.remove('preview-open');
+      card.classList.remove('preview-above');
+      card.closest('.student-row').classList.remove('is-preview-open');
+      if (active === card) active = null;
+    }
+    function dismiss(restoreFocus = false) {
+      if (!active) return;
+      const trigger = active.querySelector('.preview-trigger');
+      hide(active);
+      if (restoreFocus) {
+        restoringFocus = true;
+        trigger.focus();
+        restoringFocus = false;
+      }
+    }
+    function show(card) {
+      if (active && active !== card) hide(active);
+      const panel = card.querySelector('.student-preview');
+      if (!panel.hidden) return;
+      panel.querySelector('.preview-status').textContent = '';
+      panel.hidden = false;
+      card.classList.remove('preview-above');
+      if (fine.matches && window.innerWidth >= 768) {
+        const panelBounds = panel.getBoundingClientRect();
+        const roomAbove = panelBounds.top - card.offsetHeight + 5;
+        if (panelBounds.bottom > window.innerHeight - 16 && roomAbove > panelBounds.height + 16) card.classList.add('preview-above');
+      }
+      card.querySelector('.preview-trigger').setAttribute('aria-expanded', 'true');
+      card.classList.add('preview-open');
+      card.closest('.student-row').classList.add('is-preview-open');
+      active = card;
+    }
+    function register(row) {
+      const card = row.querySelector('.student-card');
+      const trigger = card.querySelector('.preview-trigger');
+      const panel = card.querySelector('.student-preview');
+      card.addEventListener('pointerenter', event => {
+        if (fine.matches && event.pointerType !== 'touch') show(card);
+      });
+      card.addEventListener('pointerleave', () => {
+        if (!card.contains(document.activeElement)) hide(card);
+      });
+      card.addEventListener('focusin', event => {
+        if (!restoringFocus && event.target.closest('.preview-trigger, .student-preview')) show(card);
+      });
+      card.addEventListener('focusout', event => {
+        if (!card.contains(event.relatedTarget)) hide(card);
+      });
+      trigger.addEventListener('click', () => show(card));
+      panel.querySelector('.preview-close').addEventListener('click', () => dismiss(true));
+      panel.querySelector('[data-copy-email]').addEventListener('click', async () => {
+        const status = panel.querySelector('.preview-status');
+        try {
+          if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') throw new Error('Clipboard unavailable');
+          await navigator.clipboard.writeText(row.dataset.email);
+          status.classList.remove('is-error');
+          status.textContent = 'Đã sao chép email.';
+        } catch (error) {
+          status.classList.add('is-error');
+          status.textContent = 'Không thể sao chép. Hãy chọn email bên trên.';
+        }
+      });
+    }
+    rows.querySelectorAll('.student-row').forEach(register);
+    document.addEventListener('pointerdown', event => {
+      if (active && !active.contains(event.target)) hide(active);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && active) dismiss(true);
+    });
+    return { register, dismiss };
+  }
   function applyFilters() {
-    let shown = 0;
+    preview.dismiss();
+    const matching = records.filter(record => matchesRecord(record, search.value, filter));
+    const pageCount = Math.max(1, Math.ceil(matching.length / pageSize));
+    page = Math.min(page, pageCount);
+    document.getElementById('student-list').dataset.storyPage =
+      page === 1 && !search.value.trim() && filter === 'all' && matching.length > 0 ? '1' : 'other';
+    const start = (page - 1) * pageSize;
+    const visible = new Set(matching.slice(start, start + pageSize));
     for (let i = 0; i < records.length; i++) {
-      const matches = matchesRecord(records[i], search.value, filter);
-      records[i].row.hidden = !matches;
-      if (matches) shown++;
+      records[i].row.hidden = !visible.has(records[i]);
     }
     directoryEmpty.hidden = records.length > 0 || !!document.querySelector('.directory-unavailable');
-    searchEmpty.hidden = !records.length || shown > 0;
+    searchEmpty.hidden = !records.length || matching.length > 0;
     if (!document.querySelector('.directory-unavailable')) {
-      resultCount.textContent = 'Hiển thị ' + shown + ' / ' + records.length + ' sinh viên';
+      resultCount.textContent = 'Hiển thị ' + visible.size + ' / ' + records.length + ' sinh viên';
+    }
+    pagination.hidden = pageCount <= 1 || matching.length === 0;
+    pageStatus.textContent = 'Trang ' + page + ' / ' + pageCount;
+    pagination.querySelector('[data-page-step="-1"]').disabled = page === 1;
+    pagination.querySelector('[data-page-step="1"]').disabled = page === pageCount;
+    pageNumbers.replaceChildren();
+    let previous = 0;
+    const pages = [...new Set([1, page - 1, page, page + 1, pageCount])]
+      .filter(number => number >= 1 && number <= pageCount).sort((a, b) => a - b);
+    for (const number of pages) {
+      if (previous && number - previous > 1) {
+        const gap = document.createElement('span');
+        gap.className = 'page-gap';
+        gap.textContent = '…';
+        gap.setAttribute('aria-hidden', 'true');
+        pageNumbers.append(gap);
+      }
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'page-number';
+      button.dataset.page = String(number);
+      button.textContent = String(number).padStart(2, '0');
+      button.setAttribute('aria-label', 'Trang ' + number);
+      if (number === page) {
+        button.classList.add('is-current');
+        button.setAttribute('aria-current', 'page');
+      }
+      pageNumbers.append(button);
+      previous = number;
     }
     for (let i = 0; i < filters.length; i++) {
       const active = filters[i].dataset.filter === filter;
       filters[i].classList.toggle('is-active', active);
       filters[i].setAttribute('aria-pressed', String(active));
     }
+    window.dispatchEvent(new Event('directory:state-changed'));
   }
   const tools = document.querySelector('.directory-tools');
   if (!document.querySelector('.directory-unavailable')) tools.hidden = false;
-  search.addEventListener('input', applyFilters);
+  applyFilters();
+  pagination.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button || button.disabled) return;
+    const next = button.dataset.page ? Number(button.dataset.page) : page + Number(button.dataset.pageStep);
+    if (!Number.isInteger(next) || next === page) return;
+    page = next;
+    applyFilters();
+    if (button.dataset.page) pageNumbers.querySelector('[aria-current="page"]')?.focus();
+    document.getElementById('student-list').scrollIntoView({
+      behavior: motion.reduced.matches ? 'auto' : 'smooth', block: 'start',
+    });
+  });
+  search.addEventListener('input', () => { page = 1; applyFilters(); });
   for (let i = 0; i < filters.length; i++) {
-    filters[i].addEventListener('click', () => { filter = filters[i].dataset.filter; applyFilters(); });
+    filters[i].addEventListener('click', () => { filter = filters[i].dataset.filter; page = 1; applyFilters(); });
   }
   document.getElementById('reset-search').addEventListener('click', () => {
     search.value = '';
     filter = 'all';
+    page = 1;
     applyFilters();
     search.focus();
   });
@@ -333,12 +571,21 @@
     row.dataset.email = student.email;
     const card = row.querySelector('.student-card');
     card.id = 'student-' + student.id;
+    row.querySelector('.preview-trigger').setAttribute('aria-controls', 'student-preview-' + student.id);
+    row.querySelector('.preview-trigger').setAttribute('aria-label', 'Xem nhanh hồ sơ ' + student.name);
+    const panel = row.querySelector('.student-preview');
+    panel.id = 'student-preview-' + student.id;
+    panel.setAttribute('aria-label', 'Thông tin nhanh của ' + student.name);
+    row.querySelector('[data-preview-name]').textContent = student.name;
+    row.querySelector('[data-preview-email]').textContent = student.email;
+    row.querySelector('[data-preview-send]').href = 'mailto:' + encodeURIComponent(student.email);
     row.querySelector('[data-initials]').textContent = initials(student.name);
     row.querySelector('[data-name-label]').textContent = student.name;
     const code = row.querySelector('[data-code-label]');
     const hasId = String(student.studentId || '').trim().length > 0;
     code.textContent = hasId ? 'MSSV · ' + student.studentId : 'Chưa có MSSV';
     code.classList.toggle('is-missing', !hasId);
+    row.querySelector('[data-preview-code]').textContent = code.textContent;
     row.querySelector('[data-email-label]').textContent = student.email;
     row.querySelector('[data-email-link]').href = 'mailto:' + encodeURIComponent(student.email);
     const number = row.querySelector('[data-record-label]');
@@ -398,7 +645,14 @@
           records.unshift({ row, ...payload.student });
           search.value = '';
           filter = 'all';
+          page = 1;
           applyFilters();
+          window.dispatchEvent(new CustomEvent('directory:page-one-changed', {
+            detail: { students: records.slice(0, pageSize).map(record => ({
+              id: record.row.dataset.recordId, name: record.name, studentId: record.studentId,
+              initials: record.row.querySelector('.student-avatar')?.textContent.trim() || initials(record.name),
+            })) },
+          }));
           updateSummary(payload.summary);
           form.reset();
           submit.classList.remove('is-loading');
@@ -407,6 +661,7 @@
           notice.querySelector('[data-success-text]').textContent = 'Đã thêm ' + payload.student.name + ' vào danh bạ.';
           notice.hidden = false;
           motion.register(row, true);
+          preview.register(row);
           motion.reveal(row, 400);
           highlight(row);
           row.querySelector('.student-card').focus({ preventScroll: true });

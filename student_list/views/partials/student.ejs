@@ -13,6 +13,17 @@
         <%- include('icon', { name: 'mail' }) %><span data-email-label><%= student.email %></span>
       </a>
     </div>
-    <span class="record-number" data-record-label aria-label="Số hồ sơ <%= student.id %>">#<%= String(student.id).padStart(3, '0') %></span>
+    <div class="student-quick">
+      <span class="record-number" data-record-label aria-label="Số hồ sơ <%= student.id %>">#<%= String(student.id).padStart(3, '0') %></span>
+      <button type="button" class="preview-trigger" aria-label="Xem nhanh hồ sơ <%= student.name %>" aria-expanded="false" aria-controls="student-preview-<%= student.id %>"><%- include('icon', { name: 'spark' }) %><span>Xem nhanh</span></button>
+    </div>
+    <div class="student-preview" id="student-preview-<%= student.id %>" role="group" aria-label="Thông tin nhanh của <%= student.name %>" hidden>
+      <div class="preview-heading"><span>Hồ sơ nhanh</span><button type="button" class="preview-close" aria-label="Đóng xem nhanh"><%- include('icon', { name: 'close' }) %></button></div>
+      <strong data-preview-name><%= student.name %></strong>
+      <p class="preview-code" data-preview-code><%= hasId ? 'MSSV · ' + student.studentId : 'Chưa có MSSV' %></p>
+      <p class="preview-email" data-preview-email><%= student.email %></p>
+      <div class="preview-actions"><a href="mailto:<%= encodeURIComponent(student.email || '') %>" data-preview-send>Gửi email</a><button type="button" data-copy-email>Sao chép email</button></div>
+      <p class="preview-status" role="status" aria-live="polite"></p>
+    </div>
   </article>
 </div>

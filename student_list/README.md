@@ -1,6 +1,6 @@
 # Academia · Danh bạ sinh viên
 
-Giao diện futuristic cinematic với hero, orbit, dashboard Bento và danh sách sinh viên. Ứng dụng dùng Express/EJS, CSS và Web Animations API; dữ liệu nằm trong `data/students.json`.
+Giao diện futuristic cinematic với hero, đoạn chuyển cảnh nối con số hồ sơ sang dashboard Bento, danh sách sinh viên và bảng xem nhanh. Ứng dụng dùng Express/EJS, CSS và Web Animations API; dữ liệu nằm trong `data/students.json`.
 
 ## Chạy local
 
@@ -26,6 +26,7 @@ npm start
 - Thêm sinh viên ngay trong trang; lỗi được hiển thị cạnh trường nhập và giữ dữ liệu đã điền.
 - Khi tắt JavaScript, form HTML vẫn gửi và nhận thông báo từ server.
 - Hỗ trợ bàn phím và tùy chọn giảm chuyển động của thiết bị. Parallax chỉ chạy từ 1024px; các hiệu ứng nền dừng khi hero hoặc tab không hiển thị.
+- Chuyển cảnh hero → tổng quan giữ số hồ sơ làm điểm neo; cuộn ngược cũng đảo được chuyển động. Bảng xem nhanh mở bằng hover, focus hoặc nút trên màn hình cảm ứng, có hành động gửi và sao chép email riêng biệt.
 
 ## Kiểm thử
 
@@ -38,6 +39,8 @@ npm test
 Bộ kiểm thử dùng dữ liệu trong bộ nhớ và file tạm riêng, không thêm hồ sơ thử vào danh bạ thật. jsdom là phụ thuộc phát triển và không được tải trong trình duyệt của người dùng.
 
 Kiểm tra trực quan bổ sung trên trình duyệt: 390, 768, 1280 và 1440px; tên/email dài; Tab/Shift+Tab; reduced motion; đổi tab; tìm kiếm/lọc; thêm hồ sơ và lỗi mạng. DOM mô phỏng kiểm tra hành vi nhưng không đo layout hoặc độ mượt thực tế.
+
+Ảnh kiểm tra Chrome tại 1440px và viewport mobile 390px nằm trong `evidence/qa-*.png`; gồm hero, đoạn chuyển cảnh, danh sách và bảng xem nhanh. Chrome đã xác nhận không tràn ngang ở 390px, mở bảng bằng hover/nút, đóng bằng Escape và nội dung hiển thị khi bật reduced motion. Ảnh không thay thế phép đo FPS trên thiết bị thật.
 
 ## Phản hồi POST /students
 

@@ -50,6 +50,7 @@ function createApp({
   app.set('view engine', 'ejs');
   app.set('views', path.join(__dirname, 'views'));
   app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+  app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three', 'build'), { immutable: true, maxAge: '1y' }));
   app.use(express.static(path.join(__dirname, 'public')));
   if (logRequests) {
     app.use((req, res, next) => {

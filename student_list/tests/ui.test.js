@@ -17,8 +17,13 @@ const summary = { total: 3, withStudentId: 2, missingStudentId: 1 };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function fixture(t, options = {}) {
+  const students = options.students || seed;
   const html = await ejs.renderFile(path.join(__dirname, '../views/students.ejs'), {
-    students: seed, summary: { total: 2, withStudentId: 1, missingStudentId: 1 },
+    students, summary: {
+      total: students.length,
+      withStudentId: students.filter(item => item.studentId).length,
+      missingStudentId: students.filter(item => !item.studentId).length,
+    },
     error: null, errorField: null, formValues: { studentId: '', name: '', email: '' },
     createdStudentId: null, directoryUnavailable: false,
   });
@@ -110,6 +115,46 @@ test('Actual UI combines Vietnamese search and missing-ID filter without changin
   assert.equal(input.value, '');
   assert.equal(ui.document.querySelectorAll('.student-row:not([hidden])').length, 2);
   assert.equal(ui.document.activeElement, input);
+});
+
+test('Directory shows five records per page, searches all pages, and updates page-one story after create', async t => {
+  const students = Array.from({ length: 12 }, (_, index) => {
+    const id = 12 - index;
+    return { id, studentId: String(24120000 + id), name: 'Sinh viên ' + id, email: 'student' + id + '@example.com' };
+  });
+  const createdStudent = { id: 13, studentId: '24127203', name: 'Lê Thu Hà', email: 'ha@example.com' };
+  const ui = await fixture(t, {
+    students,
+    fetch: async () => json(201, { student: createdStudent, summary: { total: 13, withStudentId: 13, missingStudentId: 0 } }),
+  });
+  const visible = () => [...ui.document.querySelectorAll('.student-row:not([hidden])')].map(row => Number(row.dataset.recordId));
+  const pager = ui.document.getElementById('directory-pagination');
+  assert.deepEqual(visible(), [12, 11, 10, 9, 8]);
+  assert.equal(ui.document.getElementById('student-list').dataset.storyPage, '1');
+  assert.equal(ui.document.getElementById('page-status').textContent, 'Trang 1 / 3');
+  pager.querySelector('[data-page="2"]').click();
+  assert.deepEqual(visible(), [7, 6, 5, 4, 3]);
+  assert.equal(ui.document.getElementById('student-list').dataset.storyPage, 'other');
+  pager.querySelector('[data-page-step="1"]').click();
+  assert.deepEqual(visible(), [2, 1]);
+  assert.equal(ui.document.getElementById('page-status').textContent, 'Trang 3 / 3');
+  const search = ui.document.getElementById('student-search');
+  search.value = 'Sinh viên 6';
+  search.dispatchEvent(new ui.window.Event('input'));
+  assert.deepEqual(visible(), [6]);
+  assert.equal(ui.document.getElementById('student-list').dataset.storyPage, 'other');
+  assert.equal(pager.hidden, true);
+  let story;
+  ui.window.addEventListener('directory:page-one-changed', event => { story = event.detail.students; });
+  fill(ui);
+  send(ui);
+  await tick();
+  assert.deepEqual(visible(), [13, 12, 11, 10, 9]);
+  assert.equal(ui.document.getElementById('student-list').dataset.storyPage, '1');
+  assert.deepEqual(Array.from(story, item => Number(item.id)), [13, 12, 11, 10, 9]);
+  assert.equal(story[0].name, 'Lê Thu Hà');
+  assert.equal(story[0].initials, 'LH');
+  assert.equal(ui.document.getElementById('page-status').textContent, 'Trang 1 / 3');
 });
 
 test('Pending submission is locked, submits the expected contract once, and waits for confirmation', async t => {
@@ -218,7 +263,9 @@ test('Cinematic intro completes by 1200ms and controls stay enabled', async t =>
   assert.equal(intro.length, 5);
   assert.ok(intro.every(animation => animation.settings.duration + animation.settings.delay <= 1200));
   assert.ok(intro.every(animation => animation.settings.fill === 'backwards'));
-  assert.equal(ui.document.querySelectorAll('.hero-actions a[href]').length, 2);
+  assert.equal(ui.document.querySelector('.hero-actions'), null);
+  assert.ok(ui.document.querySelector('.main-nav a[href="#student-list"]'));
+  assert.equal(ui.document.querySelector('.main-nav a[href="#student-form"]'), null);
   assert.equal(ui.document.querySelector('[type="submit"]').disabled, false);
 });
 
@@ -247,6 +294,15 @@ test('Parallax stays within 32/56px, disables on mobile, and live reduced motion
   ui.flush();
   assert.equal(ui.document.querySelector('.hero-depth').style.transform, 'translate3d(0,32px,0)');
   assert.equal(ui.document.querySelector('.orbit-parallax').style.transform, 'translate3d(0,56px,0)');
+  const hero = ui.document.querySelector('.hero');
+  const orbitStage = ui.document.querySelector('.orbit-stage');
+  assert.equal(hero.style.getPropertyValue('--hero-copy-y'), '-28.0px');
+  assert.equal(orbitStage.style.getPropertyValue('--orbit-stage-scale'), '0.900');
+  Object.defineProperty(ui.window, 'scrollY', { value: 0, configurable: true });
+  ui.window.dispatchEvent(new ui.window.Event('scroll'));
+  ui.flush();
+  assert.equal(hero.style.getPropertyValue('--hero-copy-y'), '0.0px');
+  assert.equal(orbitStage.style.getPropertyValue('--orbit-stage-scale'), '1.000');
   ui.preference('min-width', false);
   assert.equal(ui.document.querySelector('.hero-depth').style.transform, '');
   assert.equal(ui.document.querySelector('.orbit-parallax').style.transform, '');
@@ -292,4 +348,146 @@ test('Full stylesheet parses, rendered IDs are unique and every input has a labe
       assert.ok(ui.document.getElementById(id));
     }
   }
+});
+
+test('Bridge keeps a readable scene on reverse scroll and reduced motion', async t => {
+  const ui = await fixture(t, { reduced: false });
+  const bridge = ui.document.getElementById('journey');
+  const words = [...bridge.querySelectorAll('.bridge-word')];
+  assert.match(bridge.textContent, /Mỗi hồ sơ là một người/);
+  let top = 720;
+  bridge.getBoundingClientRect = () => ({ top, width: 900, height: 390 });
+  ui.window.dispatchEvent(new ui.window.Event('scroll'));
+  ui.flush();
+  assert.equal(bridge.style.getPropertyValue('--bridge-first'), '0.000');
+  assert.equal(bridge.style.getPropertyValue('--bridge-reveal'), '0.000');
+  assert.equal(words[0].style.getPropertyValue('--word-opacity'), '1.000');
+  top = 400;
+  ui.window.dispatchEvent(new ui.window.Event('scroll'));
+  ui.flush();
+  assert.ok(Number(bridge.style.getPropertyValue('--bridge-reveal')) > 0);
+  assert.ok(Number(bridge.style.getPropertyValue('--bridge-reveal')) < 1);
+  assert.ok(Number(words[1].style.getPropertyValue('--word-opacity')) > .8);
+  assert.equal(words[2].style.getPropertyValue('--word-opacity'), '0.000');
+  top = 120;
+  ui.window.dispatchEvent(new ui.window.Event('scroll'));
+  ui.flush();
+  assert.equal(bridge.style.getPropertyValue('--bridge-first'), '1.000');
+  assert.equal(bridge.style.getPropertyValue('--bridge-reveal'), '1.000');
+  assert.equal(bridge.style.getPropertyValue('--bridge-second'), '1.000');
+  assert.equal(words[0].style.getPropertyValue('--word-opacity'), '0.000');
+  assert.equal(words[2].style.getPropertyValue('--word-opacity'), '1.000');
+  assert.notEqual(bridge.style.getPropertyValue('--beam-x'), '0.0px');
+  top = 720;
+  ui.window.dispatchEvent(new ui.window.Event('scroll'));
+  ui.flush();
+  assert.equal(bridge.style.getPropertyValue('--bridge-first'), '0.000');
+  assert.equal(bridge.style.getPropertyValue('--bridge-reveal'), '0.000');
+  assert.equal(words[0].style.getPropertyValue('--word-opacity'), '1.000');
+  ui.preference('reduced', true);
+  assert.equal(bridge.style.getPropertyValue('--bridge-first'), '');
+  assert.equal(bridge.style.getPropertyValue('--bridge-reveal'), '');
+  assert.equal(words[0].style.getPropertyValue('--word-opacity'), '');
+  assert.equal(bridge.style.getPropertyValue('--beam-x'), '');
+  assert.match(bridge.textContent, /Cùng nhau thành một lớp học/);
+});
+
+test('Scroll moves the scene selector in both directions and keeps reduced-motion navigation usable', async t => {
+  const ui = await fixture(t, { reduced: false });
+  const directory = ui.document.getElementById('student-list');
+  const nav = ui.document.querySelector('.scene-nav');
+  const overview = nav.querySelector('[data-scene-link="overview"]');
+  const list = nav.querySelector('[data-scene-link="list"]');
+  const dashboard = ui.document.querySelector('.dashboard');
+  const tiles = [...dashboard.querySelectorAll('.stat-tile')];
+  let dashboardTop = 900;
+  dashboard.getBoundingClientRect = () => ({ top: dashboardTop, width: 900, height: 400 });
+  let top = 900;
+  directory.getBoundingClientRect = () => ({ top, width: 800, height: 500 });
+  const scroll = () => { ui.window.dispatchEvent(new ui.window.Event('scroll')); ui.flush(); };
+  scroll();
+  assert.equal(nav.style.getPropertyValue('--scene-progress'), '0.000');
+  assert.equal(overview.getAttribute('aria-current'), 'location');
+  assert.equal(list.hasAttribute('aria-current'), false);
+  assert.equal(tiles[0].style.getPropertyValue('--tile-x'), '-26.0px');
+  dashboardTop = 0;
+  top = 0;
+  scroll();
+  assert.equal(nav.style.getPropertyValue('--scene-progress'), '1.000');
+  assert.equal(list.getAttribute('aria-current'), 'location');
+  assert.equal(directory.style.getPropertyValue('--directory-opacity'), '1.000');
+  assert.equal(tiles[0].style.getPropertyValue('--tile-x'), '0.0px');
+  assert.equal(tiles[2].style.getPropertyValue('--tile-opacity'), '1.000');
+  dashboardTop = 900;
+  top = 900;
+  scroll();
+  assert.equal(nav.style.getPropertyValue('--scene-progress'), '0.000');
+  assert.equal(overview.getAttribute('aria-current'), 'location');
+  assert.equal(tiles[2].style.getPropertyValue('--tile-x'), '26.0px');
+  ui.preference('reduced', true);
+  top = 0;
+  ui.window.dispatchEvent(new ui.window.Event('scroll'));
+  assert.equal(list.getAttribute('aria-current'), 'location');
+  assert.equal(directory.style.getPropertyValue('--directory-opacity'), '');
+  assert.equal(tiles[0].style.getPropertyValue('--tile-x'), '');
+  assert.equal(ui.frames.size, 0);
+});
+
+test('Quick preview works by hover, focus and tap, and closes with Escape', async t => {
+  const ui = await fixture(t, { reduced: false });
+  const card = ui.document.querySelector('.student-card');
+  const panel = card.querySelector('.student-preview');
+  const trigger = card.querySelector('.preview-trigger');
+  assert.equal(panel.hidden, true);
+  ui.pointer(card, 'pointerenter');
+  assert.equal(panel.hidden, false);
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  ui.pointer(card, 'pointerleave');
+  assert.equal(panel.hidden, true);
+  trigger.focus();
+  assert.equal(panel.hidden, false);
+  ui.document.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(panel.hidden, true);
+  assert.equal(ui.document.activeElement, trigger);
+  trigger.click();
+  assert.equal(panel.hidden, false);
+  let copied;
+  Object.defineProperty(ui.window.navigator, 'clipboard', { value: { writeText: async value => { copied = value; } }, configurable: true });
+  panel.querySelector('[data-copy-email]').click();
+  await tick();
+  assert.equal(copied, card.closest('.student-row').dataset.email);
+  assert.equal(panel.querySelector('.preview-status').textContent, 'Đã sao chép email.');
+  panel.querySelector('.preview-close').click();
+  assert.equal(panel.hidden, true);
+  trigger.click();
+  ui.document.getElementById('student-search').value = 'unmatched';
+  ui.document.getElementById('student-search').dispatchEvent(new ui.window.Event('input'));
+  assert.equal(panel.hidden, true);
+});
+
+test('A newly saved record receives a working preview with its own actions', async t => {
+  const ui = await fixture(t, { fetch: async () => json(201, { student, summary }) });
+  fill(ui); send(ui); await tick();
+  const row = ui.document.getElementById('student-rows').firstElementChild;
+  const trigger = row.querySelector('.preview-trigger');
+  const panel = row.querySelector('.student-preview');
+  assert.equal(trigger.getAttribute('aria-controls'), panel.id);
+  trigger.click();
+  assert.equal(panel.hidden, false);
+  assert.equal(panel.querySelector('[data-preview-name]').textContent, student.name);
+  assert.equal(panel.querySelector('[data-preview-email]').textContent, student.email);
+  assert.equal(panel.querySelectorAll('a').length, 1);
+  assert.equal(panel.querySelector('[data-preview-send]').getAttribute('href'), 'mailto:' + encodeURIComponent(student.email));
+});
+test('Quick preview flips above a card near the viewport edge', async t => {
+  const ui = await fixture(t, { reduced: false });
+  const card = ui.document.querySelector('.student-card');
+  const panel = card.querySelector('.student-preview');
+  card.getBoundingClientRect = () => ({ top: 460, left: 0, width: 400, height: 100 });
+  panel.getBoundingClientRect = () => ({ top: 680, bottom: 900, left: 0, width: 300, height: 220 });
+  ui.pointer(card, 'pointerenter');
+  assert.equal(panel.hidden, false);
+  assert.ok(card.classList.contains('preview-above'));
+  ui.pointer(card, 'pointerleave');
+  assert.ok(!card.classList.contains('preview-above'));
 });

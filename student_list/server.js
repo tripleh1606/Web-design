@@ -47,8 +47,6 @@ function createApp({
   const app = express();
   let saveQueue = Promise.resolve();
 
-  app.set('view engine', 'ejs');
-  app.set('views', path.join(__dirname, 'views'));
   app.use(express.urlencoded({ extended: false, limit: '16kb' }));
   app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three', 'build'), { immutable: true, maxAge: '1y' }));
   app.use(express.static(path.join(__dirname, 'public')));
@@ -65,46 +63,23 @@ function createApp({
     return students;
   }
 
-  function render(res, students, extra = {}) {
-    return res.render('students', {
-      students: students.slice().sort((a, b) => Number(b.id) - Number(a.id)),
-      summary: summarize(students),
-      error: null,
-      errorField: null,
-      formValues: { studentId: '', name: '', email: '' },
-      createdStudentId: null,
-      directoryUnavailable: false,
-      ...extra,
-    });
-  }
-
-  function fail(req, res, students, values, status, field, message, unavailable = false) {
-    if (req.accepts(['html', 'json']) === 'json') {
-      return res.status(status).json({ error: { field, message } });
-    }
-    return render(res.status(status), students, {
-      error: message, errorField: field, formValues: values, directoryUnavailable: unavailable,
-    });
-  }
-
   app.get('/', (req, res) => res.redirect(302, '/students'));
-  app.get('/students', async (req, res) => {
+  app.get('/students', (req, res) => res.sendFile(path.join(__dirname, 'public', 'students.html')));
+  app.get('/api/students', async (req, res) => {
     try {
       const students = await readStudents();
-      const requestedId = typeof req.query.created === 'string' && /^\d+$/.test(req.query.created)
-        ? Number(req.query.created) : null;
-      const created = students.find(student => student.id === requestedId);
-      return render(res, students, { createdStudentId: created ? created.id : null });
+      res.set('Cache-Control', 'no-store');
+      return res.json({
+        students: students.slice().sort((a, b) => Number(b.id) - Number(a.id)),
+        summary: summarize(students),
+      });
     } catch (error) {
       if (logRequests) console.error('Cannot load directory:', error.message);
-      return render(res.status(500), [], {
-        error: 'Chưa tải được danh bạ. Vui lòng thử tải lại trang.',
-        directoryUnavailable: true,
-      });
+      return res.status(500).json({ error: { field: null, message: 'Chưa tải được danh bạ. Vui lòng thử lại.' } });
     }
   });
 
-  app.post('/students', async (req, res) => {
+  const createStudent = async (req, res) => {
     const values = formValues(req.body);
     // Serialize read/validate/write so overlapping requests cannot lose records.
     const task = saveQueue.then(async () => {
@@ -113,10 +88,10 @@ function createApp({
         students = await readStudents();
       } catch (error) {
         if (logRequests) console.error('Cannot load directory:', error.message);
-        return fail(req, res, [], values, 500, null, 'Chưa tải được danh bạ. Vui lòng thử tải lại trang.', true);
+        return res.status(500).json({ error: { field: null, message: 'Chưa tải được danh bạ. Vui lòng thử lại.' } });
       }
       const invalid = validate(values, students);
-      if (invalid) return fail(req, res, students, values, invalid.status, invalid.field, invalid.message);
+      if (invalid) return res.status(invalid.status).json({ error: { field: invalid.field, message: invalid.message } });
       const nextId = students.length ? Math.max(...students.map(student => Number(student.id))) + 1 : 1;
       const student = { id: nextId, studentId: values.studentId, name: values.name, email: values.email.toLowerCase() };
       const updated = students.concat(student);
@@ -124,24 +99,23 @@ function createApp({
         await storage.writeFile(studentsFile, JSON.stringify(updated, null, 2), 'utf8');
       } catch (error) {
         if (logRequests) console.error('Cannot save student:', error.message);
-        return fail(req, res, students, values, 500, null, 'Không thể lưu hồ sơ lúc này. Dữ liệu bạn nhập vẫn được giữ lại.');
+        return res.status(500).json({ error: { field: null, message: 'Không thể lưu hồ sơ lúc này. Dữ liệu bạn nhập vẫn được giữ lại.' } });
       }
-      if (req.accepts(['html', 'json']) === 'json') {
-        return res.status(201).json({ student, summary: summarize(updated) });
-      }
-      return res.redirect(303, '/students?created=' + student.id + '#student-' + student.id);
+      return res.status(201).json({ student, summary: summarize(updated) });
     });
     saveQueue = task.catch(() => {});
     await task;
-  });
+  };
+  app.post('/api/students', createStudent);
+  app.post('/students', createStudent);
 
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
     if (logRequests) console.error('Request failed:', error.message);
     const status = error.status === 413 ? 413 : 500;
-    return fail(req, res, [], formValues(req.body), status, null,
+    return res.status(status).json({ error: { field: null, message:
       status === 413 ? 'Nội dung gửi quá dài. Vui lòng kiểm tra lại các trường nhập.'
-        : 'Không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau.', true);
+        : 'Không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau.' } });
   });
   return app;
 }

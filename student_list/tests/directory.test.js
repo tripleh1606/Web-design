@@ -35,8 +35,8 @@ async function fixture(t, records = seed, options = {}) {
   const base = 'http://127.0.0.1:' + server.address().port;
   return {
     get: (route = '/students', init) => fetch(base + route, init),
-    post: (data = valid, json = true) => fetch(base + '/students', {
-      method: 'POST', headers: { Accept: json ? 'application/json' : 'text/html' },
+    post: (data = valid, route = '/api/students') => fetch(base + route, {
+      method: 'POST', headers: { Accept: 'application/json' },
       body: new URLSearchParams(data), redirect: 'manual',
     }),
     data: () => JSON.parse(content),
@@ -52,7 +52,7 @@ test('Root redirects to the real directory', async t => {
 });
 
 for (const size of [0, 1, 30, 100]) {
-  test('SSR renders ' + size + ' records with one usable native form', async t => {
+  test('CSR serves a data-free shell and JSON for ' + size + ' records', async t => {
     const records = Array.from({ length: size }, (_, i) => ({
       id: i + 1, name: i === 0 ? 'Nguyễn ' + 'Minh '.repeat(20) : 'Sinh viên ' + i,
       email: i === 0 ? 'long'.repeat(40) + '@example.com' : 'sv' + i + '@example.com',
@@ -62,13 +62,22 @@ for (const size of [0, 1, 30, 100]) {
     const response = await app.get();
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.equal((html.match(/class="student-row/g) || []).length, size + 1); // includes inert template
-    assert.ok(html.includes('method="POST" action="/students"'));
+    assert.equal((html.match(/class="student-row/g) || []).length, 1); // inert client-side template only
+    assert.ok(html.includes('action="/api/students"'));
     assert.ok(html.includes('lang="vi"'));
     assert.ok(html.includes('Mã số sinh viên'));
-    assert.ok(html.includes('id="directory-empty"' + (size ? ' hidden' : '>')));
-    if (size > 1) assert.ok(html.indexOf('data-record-id="' + size + '"') < html.indexOf('data-record-id="1"'));
-    assert.deepEqual(app.data(), records, 'Rendering must not reorder storage');
+    assert.ok(html.includes('id="directory-empty" hidden'));
+    assert.ok(!html.includes('Sinh viên 1'));
+    const api = await app.get('/api/students');
+    assert.equal(api.status, 200);
+    assert.match(api.headers.get('content-type'), /application\/json/);
+    assert.equal(api.headers.get('cache-control'), 'no-store');
+    const payload = await api.json();
+    assert.deepEqual(payload.students.map(student => student.id), records.map(student => student.id).reverse());
+    assert.deepEqual(payload.summary, {
+      total: size, withStudentId: Math.floor(size / 2), missingStudentId: Math.ceil(size / 2),
+    });
+    assert.deepEqual(app.data(), records, 'GET must not reorder storage');
   });
 }
 
@@ -123,33 +132,23 @@ test('Unicode names, apostrophes and hyphens keep existing acceptance rules', as
   assert.equal(response.status, 201);
 });
 
-test('HTML validation keeps entered values and inline error', async t => {
+test('Legacy POST route remains a JSON alias and reports validation errors', async t => {
   const app = await fixture(t);
-  const response = await app.post({ ...valid, studentId: '24127202' }, false);
+  const response = await app.post({ ...valid, studentId: '24127202' }, '/students');
   assert.equal(response.status, 409);
-  const html = await response.text();
-  assert.ok(html.includes('value="24127202"'));
-  assert.ok(html.includes('value="Nguyễn Mai Chi"'));
-  assert.ok(html.includes('value="chi@example.com"'));
-  assert.ok(html.includes('data-error-field="studentId"'));
-  assert.ok(html.includes('aria-invalid=true'));
+  assert.equal((await response.json()).error.field, 'studentId');
   assert.equal(app.writes(), 0);
 });
 
-test('HTML fallback redirects and marks the newly created student', async t => {
+test('POST returns a confirmed record without redirecting', async t => {
   const app = await fixture(t);
-  const response = await app.post(valid, false);
-  assert.equal(response.status, 303);
-  assert.equal(response.headers.get('location'), '/students?created=7#student-7');
-  const html = await (await app.get('/students?created=7')).text();
-  assert.ok(html.includes('data-created-id="7"'));
-  assert.ok(html.includes('Đã thêm Nguyễn Mai Chi vào danh bạ.'));
-  assert.ok(html.includes('class="student-row is-new"'));
-  const invalid = await (await app.get('/students?created=999')).text();
-  assert.ok(invalid.includes('data-created-id=""'));
+  const response = await app.post();
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).student.id, 7);
+  assert.equal((await app.get('/api/students').then(result => result.json())).students[0].id, 7);
 });
 
-test('Write failure never reports success and retains HTML form values', async t => {
+test('Write failure never reports success or leaks private details', async t => {
   const app = await fixture(t, seed, { writeError: true });
   const json = await app.post();
   assert.equal(json.status, 500);
@@ -157,24 +156,19 @@ test('Write failure never reports success and retains HTML form values', async t
   assert.equal(body.error.field, null);
   assert.ok(!body.student);
   assert.ok(!JSON.stringify(body).includes('private-write-detail'));
-  const htmlResponse = await app.post(valid, false);
-  assert.equal(htmlResponse.status, 500);
-  const html = await htmlResponse.text();
-  assert.ok(html.includes('value="Nguyễn Mai Chi"'));
-  assert.ok(html.includes('value="chi@example.com"'));
-  assert.ok(!html.includes('private-write-detail'));
   assert.deepEqual(app.data(), seed);
 });
 
 for (const option of ['readError', 'corrupt']) {
   test('Unavailable directory (' + option + ') is distinct from empty directory', async t => {
     const app = await fixture(t, seed, { [option]: true });
-    const response = await app.get();
+    const shell = await app.get();
+    assert.equal(shell.status, 200);
+    const response = await app.get('/api/students');
     assert.equal(response.status, 500);
-    const html = await response.text();
-    assert.ok(html.includes('Danh bạ chưa sẵn sàng'));
-    assert.ok(html.includes('id="directory-empty" hidden'));
-    assert.ok(!html.includes('private-read-detail'));
+    const body = await response.json();
+    assert.ok(body.error.message.includes('Chưa tải được danh bạ'));
+    assert.ok(!JSON.stringify(body).includes('private-read-detail'));
     const post = await app.post();
     assert.equal(post.status, 500);
     assert.equal((await post.json()).error.field, null);
@@ -201,16 +195,15 @@ test('Overlapping distinct requests preserve both records with distinct IDs', as
   assert.equal(app.writes(), 2);
 });
 
-test('Rendered legacy strings and validation inputs are escaped', async t => {
+test('Legacy data is returned as JSON and invalid names are rejected', async t => {
   const app = await fixture(t, [{ id: 1, name: '<script>alert(1)</script>', email: 'x@example.com' }]);
   const html = await (await app.get()).text();
   assert.ok(!html.includes('<script>alert(1)</script>'));
-  assert.ok(html.includes('&lt;script&gt;'));
-  const response = await app.post({ ...valid, name: '<img src=x onerror=alert(1)>' }, false);
+  const data = await (await app.get('/api/students')).json();
+  assert.equal(data.students[0].name, '<script>alert(1)</script>');
+  const response = await app.post({ ...valid, name: '<img src=x onerror=alert(1)>' });
   assert.equal(response.status, 400);
-  const errorHtml = await response.text();
-  assert.ok(!errorHtml.includes('value="<img'));
-  assert.ok(errorHtml.includes('value="&lt;img'));
+  assert.equal((await response.json()).error.field, 'name');
 });
 
 test('Persistence uses an isolated real JSON file, leaving the real directory unchanged', async t => {
@@ -228,7 +221,7 @@ test('Persistence uses an isolated real JSON file, leaving the real directory un
   await fs.writeFile(filename, JSON.stringify(seed));
   server = createApp({ studentsFile: filename, logRequests: false }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
-  const response = await fetch('http://127.0.0.1:' + server.address().port + '/students', {
+  const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/students', {
     method: 'POST', headers: { Accept: 'application/json' }, body: new URLSearchParams(valid),
   });
   assert.equal(response.status, 201);

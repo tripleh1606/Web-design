@@ -2,12 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const ejs = require('ejs');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const cssTree = require('css-tree');
 
 const script = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(__dirname, '../public/styles.css'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../public/students.html'), 'utf8');
 const seed = [
   { id: 2, studentId: '24127202', name: 'Đặng Văn Bình', email: 'binh@example.com' },
   { id: 1, name: 'Nguyễn Minh Anh', email: 'minhanh@example.com' },
@@ -18,15 +18,6 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function fixture(t, options = {}) {
   const students = options.students || seed;
-  const html = await ejs.renderFile(path.join(__dirname, '../views/students.ejs'), {
-    students, summary: {
-      total: students.length,
-      withStudentId: students.filter(item => item.studentId).length,
-      missingStudentId: students.filter(item => !item.studentId).length,
-    },
-    error: null, errorField: null, formValues: { studentId: '', name: '', email: '' },
-    createdStudentId: null, directoryUnavailable: false,
-  });
   const errors = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', error => errors.push(error));
@@ -65,7 +56,17 @@ async function fixture(t, options = {}) {
     observe(element) { this.targets.add(element); }
     unobserve(element) { this.targets.delete(element); }
   };
-  window.fetch = options.fetch;
+  window.fetch = options.noFetch ? undefined : (url, init) => {
+    if (url === '/api/students' && (!init?.method || init.method === 'GET')) {
+      if (options.loadFetch) return options.loadFetch(url, init);
+      return Promise.resolve(json(200, { students, summary: {
+        total: students.length,
+        withStudentId: students.filter(item => item.studentId).length,
+        missingStudentId: students.filter(item => !item.studentId).length,
+      } }));
+    }
+    return options.fetch ? options.fetch(url, init) : Promise.resolve(json(500, { error: { field: null, message: 'Missing mock' } }));
+  };
   let hidden = false;
   Object.defineProperty(window.document, 'hidden', { get: () => hidden });
   const reads = new Map();
@@ -117,6 +118,41 @@ test('Actual UI combines Vietnamese search and missing-ID filter without changin
   assert.equal(ui.document.activeElement, input);
 });
 
+test('CSR keeps the empty state hidden until the directory request completes', async t => {
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const ui = await fixture(t, { loadFetch: () => pending });
+  assert.equal(ui.document.querySelectorAll('#student-rows .student-row').length, 0);
+  assert.equal(ui.document.getElementById('directory-loading').hidden, false);
+  assert.equal(ui.document.getElementById('directory-empty').hidden, true);
+  assert.equal(ui.document.querySelector('[type="submit"]').disabled, true);
+  finish(json(200, { students: [], summary: { total: 0, withStudentId: 0, missingStudentId: 0 } }));
+  await tick();
+  assert.equal(ui.document.getElementById('directory-loading').hidden, true);
+  assert.equal(ui.document.getElementById('directory-empty').hidden, false);
+  assert.equal(ui.document.querySelector('[data-total]').textContent, '00');
+  assert.equal(ui.document.querySelector('[type="submit"]').disabled, false);
+});
+
+test('Failed initial API load can be retried without reloading the page', async t => {
+  let calls = 0;
+  const ui = await fixture(t, { loadFetch: () => {
+    calls++;
+    return Promise.resolve(calls === 1
+      ? json(500, { error: { field: null, message: 'Unavailable' } })
+      : json(200, { students: seed, summary: { total: 2, withStudentId: 1, missingStudentId: 1 } }));
+  } });
+  assert.equal(ui.document.getElementById('directory-unavailable').hidden, false);
+  assert.equal(ui.document.getElementById('directory-empty').hidden, true);
+  assert.equal(ui.document.querySelector('[type="submit"]').disabled, true);
+  ui.document.getElementById('retry-directory').click();
+  await tick();
+  assert.equal(calls, 2);
+  assert.equal(ui.document.getElementById('directory-unavailable').hidden, true);
+  assert.equal(ui.document.querySelectorAll('#student-rows .student-row').length, 2);
+  assert.equal(ui.document.querySelector('[type="submit"]').disabled, false);
+});
+
 test('Directory shows five records per page, searches all pages, and updates page-one story after create', async t => {
   const students = Array.from({ length: 12 }, (_, index) => {
     const id = 12 - index;
@@ -162,7 +198,7 @@ test('Pending submission is locked, submits the expected contract once, and wait
   let calls = 0;
   const ui = await fixture(t, { fetch: (url, options) => {
     calls++;
-    assert.equal(url, '/students');
+    assert.equal(url, '/api/students');
     assert.equal(options.headers.Accept, 'application/json');
     assert.equal(options.headers['Content-Type'], 'application/x-www-form-urlencoded;charset=UTF-8');
     assert.equal(options.body.get('studentId'), '24127203');
@@ -240,12 +276,13 @@ test('Native invalid form never sends fetch and shows Vietnamese validation', as
   assert.equal(ui.document.getElementById('studentId').validationMessage, 'Vui lòng nhập mã số sinh viên.');
 });
 
-test('Browser without fetch retains native HTML submit behavior', async t => {
-  const ui = await fixture(t);
+test('Browser without fetch shows an unavailable state and prevents native submit', async t => {
+  const ui = await fixture(t, { noFetch: true });
   fill(ui);
-  assert.equal(send(ui), true);
-  assert.equal(ui.document.querySelector('form').getAttribute('method'), 'POST');
-  assert.equal(ui.document.querySelector('form').getAttribute('action'), '/students');
+  assert.equal(send(ui), false);
+  assert.equal(ui.document.querySelector('[type="submit"]').disabled, true);
+  assert.equal(ui.document.getElementById('directory-unavailable').hidden, false);
+  assert.equal(ui.document.getElementById('directory-empty').hidden, true);
 });
 
 test('Inserted record data uses text nodes instead of executable HTML', async t => {

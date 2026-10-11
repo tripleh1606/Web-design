@@ -165,6 +165,8 @@ input:focus-visible { outline-offset: 3px; }
 .page-gap { min-width: 24px; text-align: center; color: var(--subtle); }
 .page-status { margin-left: auto; color: var(--subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
 .empty-state { text-align: center; padding: 48px 16px; }
+.directory-loading { padding: 38px 16px; color: var(--muted); text-align: center; font-size: 14px; }
+.no-script-message { position: fixed; z-index: 100; inset: auto 16px 16px; padding: 16px; border: 1px solid #688fbd; border-radius: 12px; background: #101a36; color: #fff; text-align: center; }
 .empty-symbol { display: grid; width: 64px; height: 64px; place-items: center; margin: 0 auto 20px; border: 1px solid var(--border); border-radius: 20px; background: rgb(99 236 255 / .045); color: var(--cyan); }
 .empty-symbol .icon { width: 28px; height: 28px; }
 .empty-state h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: -.03em; font-weight: 600; }

@@ -313,8 +313,7 @@
       heroObserver.observe(hero);
     }
 
-    const skipIntro = document.body.dataset.errorField || document.body.dataset.createdId ||
-      document.querySelector('.directory-unavailable') || !document.getElementById('form-feedback').hidden || window.location.hash;
+    const skipIntro = Boolean(window.location.hash);
     if (!skipIntro) {
       animate(document.querySelector('.header-inner'), [{ opacity: .3, transform: 'translateY(-8px)' }, { opacity: 1, transform: 'translateY(0)' }], 300);
       const words = document.querySelectorAll('.title-word');
@@ -346,6 +345,8 @@
   const pageNumbers = document.getElementById('page-numbers');
   const pageStatus = document.getElementById('page-status');
   const directoryEmpty = document.getElementById('directory-empty');
+  const directoryLoading = document.getElementById('directory-loading');
+  const directoryUnavailable = document.getElementById('directory-unavailable');
   const searchEmpty = document.getElementById('search-empty');
   const feedback = document.getElementById('form-feedback');
   const feedbackText = feedback.querySelector('[data-feedback-text]');
@@ -354,13 +355,12 @@
   const submit = form.querySelector('[type="submit"]');
   const submitLabel = submit.querySelector('[data-submit-label]');
   const fields = ['studentId', 'name', 'email'];
-  const records = Array.from(rows.querySelectorAll('.student-row'), row => ({
-    row, name: row.dataset.name, studentId: row.dataset.studentId, email: row.dataset.email,
-  }));
+  const records = [];
   let filter = 'all';
   const pageSize = 5;
   let page = 1;
   let busy = false;
+  let loaded = false;
   let successTimer;
   const motion = createMotion();
   const preview = createPreviews();
@@ -436,7 +436,6 @@
         }
       });
     }
-    rows.querySelectorAll('.student-row').forEach(register);
     document.addEventListener('pointerdown', event => {
       if (active && !active.contains(event.target)) hide(active);
     });
@@ -457,11 +456,9 @@
     for (let i = 0; i < records.length; i++) {
       records[i].row.hidden = !visible.has(records[i]);
     }
-    directoryEmpty.hidden = records.length > 0 || !!document.querySelector('.directory-unavailable');
-    searchEmpty.hidden = !records.length || matching.length > 0;
-    if (!document.querySelector('.directory-unavailable')) {
-      resultCount.textContent = 'Hiển thị ' + visible.size + ' / ' + records.length + ' sinh viên';
-    }
+    directoryEmpty.hidden = !loaded || records.length > 0;
+    searchEmpty.hidden = !loaded || !records.length || matching.length > 0;
+    if (loaded) resultCount.textContent = 'Hiển thị ' + visible.size + ' / ' + records.length + ' sinh viên';
     pagination.hidden = pageCount <= 1 || matching.length === 0;
     pageStatus.textContent = 'Trang ' + page + ' / ' + pageCount;
     pagination.querySelector('[data-page-step="-1"]').disabled = page === 1;
@@ -499,8 +496,49 @@
     window.dispatchEvent(new Event('directory:state-changed'));
   }
   const tools = document.querySelector('.directory-tools');
-  if (!document.querySelector('.directory-unavailable')) tools.hidden = false;
-  applyFilters();
+  async function loadDirectory() {
+    directoryLoading.hidden = false;
+    directoryUnavailable.hidden = true;
+    submit.disabled = true;
+    try {
+      if (typeof window.fetch !== 'function') throw new Error('Fetch unavailable');
+      const response = await window.fetch('/api/students', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error('Directory unavailable');
+      const payload = await response.json();
+      if (!Array.isArray(payload.students) || !payload.summary) throw new Error('Invalid directory response');
+      const fragment = document.createDocumentFragment();
+      records.length = 0;
+      for (const student of payload.students) {
+        const row = createRow(student);
+        fragment.append(row);
+        records.push({ row, name: student.name, studentId: student.studentId || '', email: student.email });
+        motion.register(row);
+        preview.register(row);
+      }
+      rows.replaceChildren(fragment);
+      loaded = true;
+      tools.hidden = false;
+      directoryLoading.hidden = true;
+      updateSummary(payload.summary);
+      applyFilters();
+      window.dispatchEvent(new CustomEvent('directory:page-one-changed', {
+        detail: { students: records.slice(0, pageSize).map(record => ({
+          id: record.row.dataset.recordId, name: record.name, studentId: record.studentId,
+          initials: record.row.querySelector('.student-avatar')?.textContent.trim() || initials(record.name),
+        })) },
+      }));
+      submit.disabled = false;
+    } catch (error) {
+      loaded = false;
+      directoryLoading.hidden = true;
+      directoryUnavailable.hidden = false;
+      tools.hidden = true;
+      resultCount.textContent = 'Chưa tải được danh sách.';
+      document.querySelector('[data-record-count]').textContent = 'Chưa tải';
+    }
+  }
+  document.getElementById('retry-directory').addEventListener('click', loadDirectory);
+  loadDirectory();
   pagination.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
@@ -617,10 +655,9 @@
     });
   }
 
-  if (typeof window.fetch === 'function') {
-    form.addEventListener('submit', async event => {
+  form.addEventListener('submit', async event => {
       event.preventDefault();
-      if (busy || !form.reportValidity()) return;
+      if (!loaded || busy || !form.reportValidity()) return;
       busy = true;
       resetSubmit();
       clearErrors();
@@ -632,7 +669,7 @@
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
         const body = new URLSearchParams(new FormData(form));
-        const response = await window.fetch('/students', {
+        const response = await window.fetch('/api/students', {
           method: 'POST',
           headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
           body,
@@ -681,26 +718,11 @@
         if (!submit.classList.contains('is-success')) submitLabel.textContent = 'Thêm vào danh bạ';
       }
     });
-  }
   window.addEventListener('pageshow', () => {
-    if (!busy && !document.querySelector('.directory-unavailable')) {
+    if (!busy && loaded) {
       submit.disabled = false;
       form.removeAttribute('aria-busy');
       resetSubmit();
     }
   });
-  const created = document.body.dataset.createdId;
-  if (created) {
-    const row = records.find(record => record.row.dataset.recordId === created);
-    if (row) {
-      highlight(row.row);
-      row.row.querySelector('.student-card').focus({ preventScroll: true });
-    }
-    const url = new URL(window.location.href);
-    url.searchParams.delete('created');
-    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-  }
-  const initialError = document.body.dataset.errorField;
-  if (fields.includes(initialError)) form.elements[initialError].focus();
-  else if (!feedback.hidden) feedback.focus();
 })();

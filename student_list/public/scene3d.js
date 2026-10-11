@@ -215,14 +215,6 @@ function startScene() {
     connectionGeometry.setDrawRange(0, students.length * 2);
     if (metrics) wake();
   }
-  function readPageOne() {
-    return [...document.querySelectorAll('#student-rows .student-row')].slice(0, 5)
-      .map(row => ({
-        name: row.dataset.name,
-        studentId: row.dataset.studentId,
-        initials: row.querySelector('.student-avatar')?.textContent.trim() || '?',
-      }));
-  }
 
   const starPositions = new Float32Array(CONFIG.stars * 3);
   for (let i = 0; i < CONFIG.stars; i++) {
@@ -546,6 +538,6 @@ function startScene() {
   reduced.addEventListener('change', () => { if (reduced.matches) dispose(); });
   canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); dispose(); });
   window.addEventListener('pagehide', dispose, { once: true });
-  setPageOne(readPageOne());
+  setPageOne(window.getDirectoryPageOne?.() || []);
   measure();
 }

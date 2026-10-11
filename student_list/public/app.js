@@ -355,12 +355,19 @@
   const submit = form.querySelector('[type="submit"]');
   const submitLabel = submit.querySelector('[data-submit-label]');
   const fields = ['studentId', 'name', 'email'];
-  const records = [];
-  let filter = 'all';
+  // The client owns one data model; DOM rows are only a rendering cache.
+  const state = {
+    students: [],
+    draft: { studentId: '', name: '', email: '' },
+    query: '',
+    filter: 'all',
+    page: 1,
+    loaded: false,
+  };
+  const rowById = new Map();
   const pageSize = 5;
-  let page = 1;
   let busy = false;
-  let loaded = false;
+  let renderedStudents;
   let successTimer;
   const motion = createMotion();
   const preview = createPreviews();
@@ -444,28 +451,51 @@
     });
     return { register, dismiss };
   }
-  function applyFilters() {
+  function renderDirectory(newStudentId) {
     preview.dismiss();
-    const matching = records.filter(record => matchesRecord(record, search.value, filter));
-    const pageCount = Math.max(1, Math.ceil(matching.length / pageSize));
-    page = Math.min(page, pageCount);
-    document.getElementById('student-list').dataset.storyPage =
-      page === 1 && !search.value.trim() && filter === 'all' && matching.length > 0 ? '1' : 'other';
-    const start = (page - 1) * pageSize;
-    const visible = new Set(matching.slice(start, start + pageSize));
-    for (let i = 0; i < records.length; i++) {
-      records[i].row.hidden = !visible.has(records[i]);
+    const studentsChanged = renderedStudents !== state.students;
+    if (studentsChanged) {
+      const fragment = document.createDocumentFragment();
+      const ids = new Set();
+      for (const student of state.students) {
+        ids.add(student.id);
+        let row = rowById.get(student.id);
+        if (row && (row.dataset.name !== student.name || row.dataset.studentId !== (student.studentId || '') || row.dataset.email !== student.email)) {
+          row = undefined;
+        }
+        const fresh = !row;
+        if (!row) {
+          row = createRow(student);
+          rowById.set(student.id, row);
+        }
+        fragment.append(row);
+        if (fresh) {
+          motion.register(row, student.id === newStudentId);
+          preview.register(row);
+        }
+      }
+      for (const id of rowById.keys()) if (!ids.has(id)) rowById.delete(id);
+      rows.replaceChildren(fragment);
+      renderedStudents = state.students;
     }
-    directoryEmpty.hidden = !loaded || records.length > 0;
-    searchEmpty.hidden = !loaded || !records.length || matching.length > 0;
-    if (loaded) resultCount.textContent = 'Hiển thị ' + visible.size + ' / ' + records.length + ' sinh viên';
+    const matching = state.students.filter(student => matchesRecord(student, state.query, state.filter));
+    const pageCount = Math.max(1, Math.ceil(matching.length / pageSize));
+    state.page = Math.min(state.page, pageCount);
+    document.getElementById('student-list').dataset.storyPage =
+      state.page === 1 && !state.query.trim() && state.filter === 'all' && matching.length > 0 ? '1' : 'other';
+    const start = (state.page - 1) * pageSize;
+    const visible = new Set(matching.slice(start, start + pageSize));
+    for (const student of state.students) rowById.get(student.id).hidden = !visible.has(student);
+    directoryEmpty.hidden = !state.loaded || state.students.length > 0;
+    searchEmpty.hidden = !state.loaded || !state.students.length || matching.length > 0;
+    if (state.loaded) resultCount.textContent = 'Hiển thị ' + visible.size + ' / ' + state.students.length + ' sinh viên';
     pagination.hidden = pageCount <= 1 || matching.length === 0;
-    pageStatus.textContent = 'Trang ' + page + ' / ' + pageCount;
-    pagination.querySelector('[data-page-step="-1"]').disabled = page === 1;
-    pagination.querySelector('[data-page-step="1"]').disabled = page === pageCount;
+    pageStatus.textContent = 'Trang ' + state.page + ' / ' + pageCount;
+    pagination.querySelector('[data-page-step="-1"]').disabled = state.page === 1;
+    pagination.querySelector('[data-page-step="1"]').disabled = state.page === pageCount;
     pageNumbers.replaceChildren();
     let previous = 0;
-    const pages = [...new Set([1, page - 1, page, page + 1, pageCount])]
+    const pages = [...new Set([1, state.page - 1, state.page, state.page + 1, pageCount])]
       .filter(number => number >= 1 && number <= pageCount).sort((a, b) => a - b);
     for (const number of pages) {
       if (previous && number - previous > 1) {
@@ -481,7 +511,7 @@
       button.dataset.page = String(number);
       button.textContent = String(number).padStart(2, '0');
       button.setAttribute('aria-label', 'Trang ' + number);
-      if (number === page) {
+      if (number === state.page) {
         button.classList.add('is-current');
         button.setAttribute('aria-current', 'page');
       }
@@ -489,12 +519,22 @@
       previous = number;
     }
     for (let i = 0; i < filters.length; i++) {
-      const active = filters[i].dataset.filter === filter;
+      const active = filters[i].dataset.filter === state.filter;
       filters[i].classList.toggle('is-active', active);
       filters[i].setAttribute('aria-pressed', String(active));
     }
+    if (studentsChanged) {
+      updateSummary();
+      window.dispatchEvent(new CustomEvent('directory:page-one-changed', {
+        detail: { students: window.getDirectoryPageOne() },
+      }));
+    }
     window.dispatchEvent(new Event('directory:state-changed'));
+    return rowById.get(newStudentId);
   }
+  window.getDirectoryPageOne = () => state.students.slice(0, pageSize).map(student => ({
+    id: student.id, name: student.name, studentId: student.studentId || '', initials: initials(student.name),
+  }));
   const tools = document.querySelector('.directory-tools');
   async function loadDirectory() {
     directoryLoading.hidden = false;
@@ -506,30 +546,14 @@
       if (!response.ok) throw new Error('Directory unavailable');
       const payload = await response.json();
       if (!Array.isArray(payload.students) || !payload.summary) throw new Error('Invalid directory response');
-      const fragment = document.createDocumentFragment();
-      records.length = 0;
-      for (const student of payload.students) {
-        const row = createRow(student);
-        fragment.append(row);
-        records.push({ row, name: student.name, studentId: student.studentId || '', email: student.email });
-        motion.register(row);
-        preview.register(row);
-      }
-      rows.replaceChildren(fragment);
-      loaded = true;
+      state.students = payload.students;
+      state.loaded = true;
       tools.hidden = false;
       directoryLoading.hidden = true;
-      updateSummary(payload.summary);
-      applyFilters();
-      window.dispatchEvent(new CustomEvent('directory:page-one-changed', {
-        detail: { students: records.slice(0, pageSize).map(record => ({
-          id: record.row.dataset.recordId, name: record.name, studentId: record.studentId,
-          initials: record.row.querySelector('.student-avatar')?.textContent.trim() || initials(record.name),
-        })) },
-      }));
+      renderDirectory();
       submit.disabled = false;
     } catch (error) {
-      loaded = false;
+      state.loaded = false;
       directoryLoading.hidden = true;
       directoryUnavailable.hidden = false;
       tools.hidden = true;
@@ -542,24 +566,25 @@
   pagination.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
-    const next = button.dataset.page ? Number(button.dataset.page) : page + Number(button.dataset.pageStep);
-    if (!Number.isInteger(next) || next === page) return;
-    page = next;
-    applyFilters();
+    const next = button.dataset.page ? Number(button.dataset.page) : state.page + Number(button.dataset.pageStep);
+    if (!Number.isInteger(next) || next === state.page) return;
+    state.page = next;
+    renderDirectory();
     if (button.dataset.page) pageNumbers.querySelector('[aria-current="page"]')?.focus();
     document.getElementById('student-list').scrollIntoView({
       behavior: motion.reduced.matches ? 'auto' : 'smooth', block: 'start',
     });
   });
-  search.addEventListener('input', () => { page = 1; applyFilters(); });
+  search.addEventListener('input', () => { state.query = search.value; state.page = 1; renderDirectory(); });
   for (let i = 0; i < filters.length; i++) {
-    filters[i].addEventListener('click', () => { filter = filters[i].dataset.filter; page = 1; applyFilters(); });
+    filters[i].addEventListener('click', () => { state.filter = filters[i].dataset.filter; state.page = 1; renderDirectory(); });
   }
   document.getElementById('reset-search').addEventListener('click', () => {
-    search.value = '';
-    filter = 'all';
-    page = 1;
-    applyFilters();
+    state.query = '';
+    search.value = state.query;
+    state.filter = 'all';
+    state.page = 1;
+    renderDirectory();
     search.focus();
   });
 
@@ -591,14 +616,16 @@
     submit.classList.remove('is-loading', 'is-success');
     submitLabel.textContent = 'Thêm vào danh bạ';
   }
-  function updateSummary(summary) {
+  function updateSummary() {
+    const total = state.students.length;
+    const withStudentId = state.students.filter(student => String(student.studentId || '').trim()).length;
     for (const [selector, value] of [
-      ['[data-total]', summary.total],
-      ['[data-with-id]', summary.withStudentId],
-      ['[data-missing-id]', summary.missingStudentId],
+      ['[data-total]', total],
+      ['[data-with-id]', withStudentId],
+      ['[data-missing-id]', total - withStudentId],
     ]) document.querySelectorAll(selector).forEach(element => { element.textContent = String(value).padStart(2, '0'); });
-    document.querySelector('[data-record-count]').textContent = records.length + ' hồ sơ';
-    document.querySelector('[data-filter-count]').textContent = String(summary.missingStudentId);
+    document.querySelector('[data-record-count]').textContent = total + ' hồ sơ';
+    document.querySelector('[data-filter-count]').textContent = String(total - withStudentId);
     motion.pulseNumbers();
   }
   function createRow(student) {
@@ -636,9 +663,18 @@
     window.setTimeout(() => row.classList.remove('is-new'), 1200);
   }
 
+  function renderDraft() {
+    for (const field of fields) {
+      const input = form.elements[field];
+      if (input.value !== state.draft[field]) input.value = state.draft[field];
+    }
+  }
+
   for (const field of fields) {
     const input = form.elements[field];
     input.addEventListener('input', () => {
+      state.draft = { ...state.draft, [field]: input.value };
+      renderDraft();
       input.setCustomValidity('');
       input.removeAttribute('aria-invalid');
       document.getElementById(field + '-error').hidden = true;
@@ -657,7 +693,7 @@
 
   form.addEventListener('submit', async event => {
       event.preventDefault();
-      if (!loaded || busy || !form.reportValidity()) return;
+      if (!state.loaded || busy || !form.reportValidity()) return;
       busy = true;
       resetSubmit();
       clearErrors();
@@ -668,7 +704,7 @@
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
-        const body = new URLSearchParams(new FormData(form));
+        const body = new URLSearchParams(state.draft);
         const response = await window.fetch('/api/students', {
           method: 'POST',
           headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
@@ -677,28 +713,19 @@
         });
         const payload = await response.json();
         if (response.status === 201 && payload.student && payload.summary && typeof payload.student.id === 'number') {
-          const row = createRow(payload.student);
-          rows.prepend(row);
-          records.unshift({ row, ...payload.student });
-          search.value = '';
-          filter = 'all';
-          page = 1;
-          applyFilters();
-          window.dispatchEvent(new CustomEvent('directory:page-one-changed', {
-            detail: { students: records.slice(0, pageSize).map(record => ({
-              id: record.row.dataset.recordId, name: record.name, studentId: record.studentId,
-              initials: record.row.querySelector('.student-avatar')?.textContent.trim() || initials(record.name),
-            })) },
-          }));
-          updateSummary(payload.summary);
-          form.reset();
+          state.students = [payload.student, ...state.students];
+          state.query = '';
+          search.value = state.query;
+          state.filter = 'all';
+          state.page = 1;
+          const row = renderDirectory(payload.student.id);
+          state.draft = { studentId: '', name: '', email: '' };
+          renderDraft();
           submit.classList.remove('is-loading');
           submit.classList.add('is-success');
           submitLabel.textContent = 'Đã thêm sinh viên';
           notice.querySelector('[data-success-text]').textContent = 'Đã thêm ' + payload.student.name + ' vào danh bạ.';
           notice.hidden = false;
-          motion.register(row, true);
-          preview.register(row);
           motion.reveal(row, 400);
           highlight(row);
           row.querySelector('.student-card').focus({ preventScroll: true });
@@ -719,7 +746,7 @@
       }
     });
   window.addEventListener('pageshow', () => {
-    if (!busy && loaded) {
+    if (!busy && state.loaded) {
       submit.disabled = false;
       form.removeAttribute('aria-busy');
       resetSubmit();

@@ -1,0 +1,8 @@
+<%- include('../partials/header', { title }) %>
+<div class="page-content"><div class="breadcrumb"><a href="/dishes">Menu</a><span>/</span><span><%= dish.name %></span></div>
+  <article class="dish-detail">
+    <div class="detail-image"><% if (dish.image) { %><img src="<%= dish.image %>" alt="<%= dish.name %>"><% } else { %><span aria-hidden="true">🍵</span><% } %></div>
+    <div class="detail-info"><span class="product-category"><%= categoryLabel(dish.category) %></span><h1><%= dish.name %></h1><p class="detail-price"><%= formatVND(dish.price) %></p><p class="detail-description"><%= dish.description || 'Một món trà trong thực đơn Soucha, được chuẩn bị từ nguyên liệu chọn lọc.' %></p><dl><div><dt>Trạng thái</dt><dd><%= dish.available ? 'Đang phục vụ' : 'Tạm hết' %></dd></div><div><dt>Mã món</dt><dd>#<%= dish.id %></dd></div><% if (dish.createdAt) { %><div><dt>Ngày tạo</dt><dd><%= new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium' }).format(dish.createdAt) %></dd></div><% } %></dl><a class="button secondary" href="/dishes">← Quay lại menu</a></div>
+  </article>
+</div>
+<%- include('../partials/footer') %>

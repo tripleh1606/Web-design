@@ -1,0 +1,30 @@
+<%- include('../partials/header', { title }) %>
+<section class="search-band">
+  <form class="search-form" method="GET" action="/dishes" role="search">
+    <label class="sr-only" for="dish-search">Tìm món theo tên</label>
+    <input id="dish-search" name="q" type="search" value="<%= q %>" placeholder="Xin chào, bạn cần gì hôm nay?" maxlength="120">
+    <% if (category) { %><input type="hidden" name="category" value="<%= category %>"><% } %>
+    <% if (sort !== 'default') { %><input type="hidden" name="sort" value="<%= sort %>"><% } %>
+    <button type="submit" aria-label="Tìm kiếm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></button>
+  </form>
+</section>
+<div class="menu-content">
+  <nav class="category-tabs" aria-label="Danh mục">
+    <a class="<%= !category ? 'active' : '' %>" href="/dishes?<%= new URLSearchParams({ ...(q ? { q } : {}), ...(sort !== 'default' ? { sort } : {}) }) %>" <%- !category ? 'aria-current="page"' : '' %>>Tất cả</a>
+    <% categories.forEach((item) => { %><a class="<%= category === item.id ? 'active' : '' %>" href="/dishes?<%= new URLSearchParams({ ...(q ? { q } : {}), category: item.id, ...(sort !== 'default' ? { sort } : {}) }) %>" <%- category === item.id ? 'aria-current="page"' : '' %>><%= item.name %></a><% }) %>
+  </nav>
+  <div class="menu-heading"><div><h1>Menu</h1><p><%= dishes.length %> món<% if (q) { %> · kết quả cho “<%= q %>”<% } %></p></div>
+    <form method="GET" action="/dishes" class="sort-form"><label for="sort">Sắp xếp:</label><% if (q) { %><input type="hidden" name="q" value="<%= q %>"><% } %><% if (category) { %><input type="hidden" name="category" value="<%= category %>"><% } %><select id="sort" name="sort"><option value="default" <%= sort === 'default' ? 'selected' : '' %>>Thứ tự</option><option value="price-asc" <%= sort === 'price-asc' ? 'selected' : '' %>>Giá tăng dần</option><option value="price-desc" <%= sort === 'price-desc' ? 'selected' : '' %>>Giá giảm dần</option></select><button type="submit">Áp dụng</button></form>
+  </div>
+  <% if (dishes.length) { %>
+    <div class="product-grid">
+      <% dishes.forEach((dish) => { %>
+        <article class="product-card">
+          <a class="product-image" href="/dishes/<%= dish.id %>" aria-label="Xem <%= dish.name %>"><% if (dish.image) { %><img src="<%= dish.image %>" alt="<%= dish.name %>"><% } else { %><span aria-hidden="true">🍵</span><% } %></a>
+          <div class="product-info"><div><span class="product-category"><%= categoryLabel(dish.category) %></span><h2><a href="/dishes/<%= dish.id %>"><%= dish.name %></a></h2></div><div class="product-bottom"><div><strong><%= formatVND(dish.price) %></strong><small><%= dish.available ? 'Đang phục vụ' : 'Tạm hết' %></small></div><a class="product-open" href="/dishes/<%= dish.id %>" aria-label="Xem chi tiết <%= dish.name %>">+</a></div></div>
+        </article>
+      <% }) %>
+    </div>
+  <% } else { %><div class="empty-state"><p>Không tìm thấy món trà phù hợp.</p><a href="/dishes">Xem lại tất cả món</a></div><% } %>
+</div>
+<%- include('../partials/footer') %>

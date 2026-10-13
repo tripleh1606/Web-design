@@ -27,7 +27,8 @@ const resources = {
     plural: 'Nguyên liệu',
     fields: [
       { key: 'name', label: 'Tên nguyên liệu', required: true },
-      { key: 'unit', label: 'Đơn vị', required: true }
+      { key: 'unit', label: 'Đơn vị', required: true },
+      { key: 'stock', label: 'Tồn kho', required: true, type: 'number' }
     ]
   }
 };

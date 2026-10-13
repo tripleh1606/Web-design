@@ -1,0 +1,59 @@
+<%- include('../partials/header', { title }) %>
+<div class="admin-content">
+  <div class="breadcrumb"><a href="/admin/chefs">Đầu bếp</a><span>/</span><span>Món có thể làm</span></div>
+  <div class="admin-heading">
+    <div>
+      <h1><%= chef.name %></h1>
+      <p><%= chef.specialty %> · <%= assigned.length %> món đã gán</p>
+    </div>
+    <div class="admin-actions">
+      <a class="edit" href="/admin/chefs/<%= chef.id %>/edit">Sửa đầu bếp</a>
+      <a class="button secondary" href="/admin/chefs">Quay lại</a>
+    </div>
+  </div>
+
+  <section class="relation-panel">
+    <h2>Món đầu bếp có thể làm</h2>
+    <% if (assigned.length) { %>
+      <div class="admin-list">
+        <% assigned.forEach((row) => { %>
+          <article class="admin-row">
+            <div class="admin-thumb"><% if (row.dish.image) { %><img src="<%= row.dish.image %>" alt=""><% } else { %><span aria-hidden="true">🍵</span><% } %></div>
+            <div class="admin-row-copy">
+              <h2><%= row.dish.name %></h2>
+              <p><%= categoryLabel(row.dish.category) %> · <%= formatVND(row.dish.price) %></p>
+            </div>
+            <div class="admin-actions">
+              <a class="delete" href="/admin/chefs/<%= chef.id %>/dishes/<%= row.dishId %>/delete">Gỡ món</a>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <p class="admin-count">Chưa gán món nào cho đầu bếp này.</p>
+    <% } %>
+  </section>
+
+  <section class="relation-panel">
+    <h2>Thêm món</h2>
+    <% if (availableDishes.length) { %>
+      <form class="form-card relation-form" method="POST" action="/admin/chefs/<%= chef.id %>/dishes" novalidate>
+        <% if (Object.keys(errors).length) { %><div class="form-alert" role="alert">Vui lòng kiểm tra các trường bên dưới.</div><% } %>
+        <div class="field">
+          <label for="field-dishId">Món ăn *</label>
+          <select id="field-dishId" name="dishId" required <%- errors.dishId ? 'aria-invalid="true"' : '' %>>
+            <option value="">Chọn món</option>
+            <% availableDishes.forEach((item) => { %>
+              <option value="<%= item.id %>" <%= String(values.dishId) === String(item.id) ? 'selected' : '' %>><%= item.name %></option>
+            <% }) %>
+          </select>
+          <% if (errors.dishId) { %><p class="field-error"><%= errors.dishId %></p><% } %>
+        </div>
+        <div class="form-actions"><button class="button primary" type="submit">Gán món</button></div>
+      </form>
+    <% } else { %>
+      <p class="admin-count">Mọi món đã được gán, hoặc chưa có món nào.</p>
+    <% } %>
+  </section>
+</div>
+<%- include('../partials/footer') %>

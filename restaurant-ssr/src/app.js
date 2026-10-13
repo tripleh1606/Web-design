@@ -3,8 +3,15 @@ const express = require('express');
 const methodOverride = require('method-override');
 const { resources, parseId, validate, valuesFromRecord } = require('./validation');
 const { categories, categoryLabel, formatVND } = require('./soucha-menu');
+const { servingsPossible } = require('./recipe');
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+
+function parsePositiveInt(value) {
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n <= 2147483647 ? n : null;
+}
 
 function createApp({ prisma, logger = console }) {
   if (!prisma) throw new Error('A Prisma client is required.');
@@ -121,6 +128,258 @@ function createApp({ prisma, logger = console }) {
       res.redirect(303, base);
     }));
   }
+
+  async function renderDishDetail(res, dishId, { values = {}, errors = {}, status = 200 } = {}) {
+    const dish = await prisma.dish.findUnique({
+      where: { id: dishId },
+      include: {
+        ingredients: {
+          include: { ingredient: true },
+          orderBy: { ingredientId: 'asc' }
+        }
+      }
+    });
+    if (!dish) return notFound(res, '/admin/dishes');
+    const recipe = dish.ingredients;
+    const linkedIds = new Set(recipe.map((row) => row.ingredientId));
+    const allIngredients = await prisma.ingredient.findMany({ orderBy: { name: 'asc' } });
+    const availableIngredients = allIngredients.filter((item) => !linkedIds.has(item.id));
+    // Recalculate from the full recipe every render (including after add/remove + 303).
+    const servings = servingsPossible(recipe.map((row) => ({
+      amount: row.amount,
+      stock: row.ingredient.stock
+    })));
+    return res.status(status).render('admin/dish-detail', {
+      title: `Công thức · ${dish.name}`,
+      dish,
+      recipe,
+      servings,
+      availableIngredients,
+      values,
+      errors
+    });
+  }
+
+  app.get('/admin/dishes/:id', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return notFound(res, '/admin/dishes');
+    return renderDishDetail(res, id);
+  }));
+
+  app.post('/admin/dishes/:id/ingredients', asyncRoute(async (req, res) => {
+    const dishId = parseId(req.params.id);
+    if (dishId === null) return notFound(res, '/admin/dishes');
+    const dish = await prisma.dish.findUnique({ where: { id: dishId } });
+    if (!dish) return notFound(res, '/admin/dishes');
+
+    const ingredientIdRaw = typeof req.body?.ingredientId === 'string' ? req.body.ingredientId.trim() : '';
+    const amountRaw = typeof req.body?.amount === 'string' ? req.body.amount.trim() : '';
+    const values = { ingredientId: ingredientIdRaw, amount: amountRaw };
+    const errors = {};
+    const ingredientId = parsePositiveInt(ingredientIdRaw);
+    const amount = parsePositiveInt(amountRaw);
+
+    if (ingredientId === null) errors.ingredientId = 'Chọn một nguyên liệu hợp lệ.';
+    if (amount === null) errors.amount = 'Lượng cần phải là số nguyên từ 1 trở lên.';
+
+    if (ingredientId !== null) {
+      const ingredient = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
+      if (!ingredient) errors.ingredientId = 'Nguyên liệu không tồn tại.';
+      else {
+        const linked = await prisma.dishIngredient.findUnique({
+          where: { dishId_ingredientId: { dishId, ingredientId } }
+        });
+        if (linked) errors.ingredientId = 'Nguyên liệu này đã có trong công thức.';
+      }
+    }
+
+    if (Object.keys(errors).length) {
+      return renderDishDetail(res, dishId, { values, errors, status: 400 });
+    }
+
+    await prisma.dishIngredient.create({ data: { dishId, ingredientId, amount } });
+    res.redirect(303, `/admin/dishes/${dishId}`);
+  }));
+
+  app.get('/admin/dishes/:id/ingredients/:ingredientId/edit', asyncRoute(async (req, res) => {
+    const dishId = parseId(req.params.id);
+    const ingredientId = parseId(req.params.ingredientId);
+    if (dishId === null || ingredientId === null) return notFound(res, '/admin/dishes');
+    const link = await prisma.dishIngredient.findUnique({
+      where: { dishId_ingredientId: { dishId, ingredientId } },
+      include: { dish: true, ingredient: true }
+    });
+    if (!link) return notFound(res, `/admin/dishes/${dishId}`);
+    res.render('admin/dish-ingredient-edit', {
+      title: `Sửa · ${link.ingredient.name}`,
+      dish: link.dish,
+      ingredient: link.ingredient,
+      values: { amount: String(link.amount) },
+      errors: {}
+    });
+  }));
+
+  app.patch('/admin/dishes/:id/ingredients/:ingredientId', asyncRoute(async (req, res) => {
+    const dishId = parseId(req.params.id);
+    const ingredientId = parseId(req.params.ingredientId);
+    if (dishId === null || ingredientId === null) return notFound(res, '/admin/dishes');
+    const link = await prisma.dishIngredient.findUnique({
+      where: { dishId_ingredientId: { dishId, ingredientId } },
+      include: { dish: true, ingredient: true }
+    });
+    if (!link) return notFound(res, `/admin/dishes/${dishId}`);
+
+    const amountRaw = typeof req.body?.amount === 'string' ? req.body.amount.trim() : '';
+    const values = { amount: amountRaw };
+    const errors = {};
+    const amount = parsePositiveInt(amountRaw);
+    if (amount === null) errors.amount = 'Lượng cần phải là số nguyên từ 1 trở lên.';
+
+    if (Object.keys(errors).length) {
+      return res.status(400).render('admin/dish-ingredient-edit', {
+        title: `Sửa · ${link.ingredient.name}`,
+        dish: link.dish,
+        ingredient: link.ingredient,
+        values,
+        errors
+      });
+    }
+
+    await prisma.dishIngredient.update({
+      where: { dishId_ingredientId: { dishId, ingredientId } },
+      data: { amount }
+    });
+    res.redirect(303, `/admin/dishes/${dishId}`);
+  }));
+
+  app.get('/admin/dishes/:id/ingredients/:ingredientId/delete', asyncRoute(async (req, res) => {
+    const dishId = parseId(req.params.id);
+    const ingredientId = parseId(req.params.ingredientId);
+    if (dishId === null || ingredientId === null) return notFound(res, '/admin/dishes');
+    const link = await prisma.dishIngredient.findUnique({
+      where: { dishId_ingredientId: { dishId, ingredientId } },
+      include: { dish: true, ingredient: true }
+    });
+    if (!link) return notFound(res, `/admin/dishes/${dishId}`);
+    res.render('admin/unlink', {
+      title: 'Gỡ nguyên liệu',
+      backHref: `/admin/dishes/${dishId}/ingredients/${ingredientId}/edit`,
+      backLabel: 'Chỉnh sửa',
+      heading: 'Gỡ nguyên liệu khỏi công thức?',
+      message: `Bạn sắp gỡ “${link.ingredient.name}” khỏi món “${link.dish.name}”. Chỉ khi bấm xác nhận bên dưới, liên kết mới bị xóa.`,
+      action: `/admin/dishes/${dishId}/ingredients/${ingredientId}?_method=DELETE`,
+      cancelHref: `/admin/dishes/${dishId}/ingredients/${ingredientId}/edit`
+    });
+  }));
+
+  app.delete('/admin/dishes/:id/ingredients/:ingredientId', asyncRoute(async (req, res) => {
+    const dishId = parseId(req.params.id);
+    const ingredientId = parseId(req.params.ingredientId);
+    if (dishId === null || ingredientId === null) return notFound(res, '/admin/dishes');
+    const link = await prisma.dishIngredient.findUnique({
+      where: { dishId_ingredientId: { dishId, ingredientId } }
+    });
+    if (!link) return notFound(res, `/admin/dishes/${dishId}`);
+    await prisma.dishIngredient.delete({
+      where: { dishId_ingredientId: { dishId, ingredientId } }
+    });
+    res.redirect(303, `/admin/dishes/${dishId}`);
+  }));
+
+  async function renderChefDetail(res, chefId, { values = {}, errors = {}, status = 200 } = {}) {
+    const chef = await prisma.chef.findUnique({
+      where: { id: chefId },
+      include: {
+        dishes: {
+          include: { dish: true },
+          orderBy: { dishId: 'asc' }
+        }
+      }
+    });
+    if (!chef) return notFound(res, '/admin/chefs');
+    const assignedIds = new Set(chef.dishes.map((row) => row.dishId));
+    const allDishes = await prisma.dish.findMany({ orderBy: { name: 'asc' } });
+    const availableDishes = allDishes.filter((item) => !assignedIds.has(item.id));
+    return res.status(status).render('admin/chef-detail', {
+      title: `Món · ${chef.name}`,
+      chef,
+      assigned: chef.dishes,
+      availableDishes,
+      values,
+      errors
+    });
+  }
+
+  app.get('/admin/chefs/:id', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return notFound(res, '/admin/chefs');
+    return renderChefDetail(res, id);
+  }));
+
+  app.post('/admin/chefs/:id/dishes', asyncRoute(async (req, res) => {
+    const chefId = parseId(req.params.id);
+    if (chefId === null) return notFound(res, '/admin/chefs');
+    const chef = await prisma.chef.findUnique({ where: { id: chefId } });
+    if (!chef) return notFound(res, '/admin/chefs');
+
+    const dishIdRaw = typeof req.body?.dishId === 'string' ? req.body.dishId.trim() : '';
+    const values = { dishId: dishIdRaw };
+    const errors = {};
+    const dishId = parsePositiveInt(dishIdRaw);
+
+    if (dishId === null) errors.dishId = 'Chọn một món hợp lệ.';
+    else {
+      const dish = await prisma.dish.findUnique({ where: { id: dishId } });
+      if (!dish) errors.dishId = 'Món ăn không tồn tại.';
+      else {
+        const linked = await prisma.chefDish.findUnique({
+          where: { chefId_dishId: { chefId, dishId } }
+        });
+        if (linked) errors.dishId = 'Món này đã được gán cho đầu bếp.';
+      }
+    }
+
+    if (Object.keys(errors).length) {
+      return renderChefDetail(res, chefId, { values, errors, status: 400 });
+    }
+
+    await prisma.chefDish.create({ data: { chefId, dishId } });
+    res.redirect(303, `/admin/chefs/${chefId}`);
+  }));
+
+  app.get('/admin/chefs/:id/dishes/:dishId/delete', asyncRoute(async (req, res) => {
+    const chefId = parseId(req.params.id);
+    const dishId = parseId(req.params.dishId);
+    if (chefId === null || dishId === null) return notFound(res, '/admin/chefs');
+    const link = await prisma.chefDish.findUnique({
+      where: { chefId_dishId: { chefId, dishId } },
+      include: { chef: true, dish: true }
+    });
+    if (!link) return notFound(res, `/admin/chefs/${chefId}`);
+    res.render('admin/unlink', {
+      title: 'Gỡ món',
+      backHref: `/admin/chefs/${chefId}`,
+      backLabel: link.chef.name,
+      heading: 'Gỡ món khỏi đầu bếp?',
+      message: `Bạn sắp gỡ “${link.dish.name}” khỏi đầu bếp “${link.chef.name}”. Chỉ khi bấm xác nhận bên dưới, liên kết mới bị xóa.`,
+      action: `/admin/chefs/${chefId}/dishes/${dishId}?_method=DELETE`,
+      cancelHref: `/admin/chefs/${chefId}`
+    });
+  }));
+
+  app.delete('/admin/chefs/:id/dishes/:dishId', asyncRoute(async (req, res) => {
+    const chefId = parseId(req.params.id);
+    const dishId = parseId(req.params.dishId);
+    if (chefId === null || dishId === null) return notFound(res, '/admin/chefs');
+    const link = await prisma.chefDish.findUnique({
+      where: { chefId_dishId: { chefId, dishId } }
+    });
+    if (!link) return notFound(res, `/admin/chefs/${chefId}`);
+    await prisma.chefDish.delete({
+      where: { chefId_dishId: { chefId, dishId } }
+    });
+    res.redirect(303, `/admin/chefs/${chefId}`);
+  }));
 
   app.use((_req, res) => notFound(res));
   app.use((error, _req, res, _next) => {

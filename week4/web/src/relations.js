@@ -2,7 +2,6 @@ import { request } from './api.js';
 import { el, link, dishImage } from './dom.js';
 import { money, categoryLabel } from './resources.js';
 import { createRecipeEditor } from './recipe-editor.js';
-import { createSearchSelect } from './search-select.js';
 
 export async function recipePage(ctx, id, helpers) {
   const base = `/admin/dishes/${id}`;
@@ -37,44 +36,146 @@ export async function chefPage(ctx, id, helpers) {
   const base = `/admin/chefs/${id}`;
   helpers.loading(ctx);
   try {
-    const [chef, dishes] = await Promise.all([request('chefs', { id, signal: ctx.signal }), request('dishes', { signal: ctx.signal })]);
+    const chef = await request('chefs', { id, signal: ctx.signal });
     if (ctx.signal.aborted) return;
     document.title = `Soucha · Món của ${chef.name}`;
-    const assigned = new Set(chef.dishes.map((row) => row.dishId));
-    const available = dishes.filter((dish) => !assigned.has(dish.id));
-    const errorNode = el('p', { className: 'field-error', id: 'assigned-dish-error', role: 'alert' });
-    const picker = createSearchSelect({
-      id: 'assigned-dish', name: 'dishId', placeholder: 'Tìm món đầu bếp sẽ phụ trách…',
-      attributes: { 'aria-describedby': 'assigned-dish-error' },
-      options: available.map((dish) => ({ value: dish.id, label: dish.name })),
-      onChange: () => { errorNode.textContent = ''; picker.input.setAttribute('aria-invalid', 'false'); }
-    });
-    const button = el('button', { type: 'submit' }, 'Gán món');
-    const fieldset = el('fieldset', {}, el('div', { className: 'field' }, el('label', { htmlFor: 'assigned-dish' }, 'Món ăn *'), picker.element, errorNode));
-    let saving = false;
-    const form = el('form', { className: 'record-form compact-form', noValidate: true, onSubmit: async (event) => {
-      event.preventDefault();
-      if (saving) return;
-      errorNode.textContent = '';
-      if (!picker.value) { errorNode.textContent = 'Chọn một món ăn.'; picker.input.setAttribute('aria-invalid', 'true'); picker.input.focus(); return; }
-      saving = true;
-      button.disabled = fieldset.disabled = true;
-      try {
-        await request('chefs', { id, path: 'dishes', method: 'POST', data: { dishId: Number(picker.value) }, signal: ctx.signal });
-        if (!ctx.signal.aborted) helpers.navigate(base, { replace: true });
-      } catch (error) {
-        if (ctx.signal.aborted) return;
-        if (error.code === 'VALIDATION_FAILED') errorNode.textContent = error.fields.dishId || error.fields._form || error.message;
-        else helpers.errorPanel(error, ctx, '/admin/chefs');
-      } finally { saving = false; button.disabled = fieldset.disabled = false; }
-    } }, fieldset, button);
-    ctx.body.replaceChildren(link('/admin/chefs', '← Quay lại đầu bếp', 'back'),
-      helpers.pageHeader(chef.name, `${chef.specialty} · ${chef.dishes.length} món đã gán`, link(`/admin/chefs/${id}/edit`, 'Sửa đầu bếp', 'button secondary')),
-      el('section', { className: 'relation-panel' }, el('h2', {}, 'Món đầu bếp có thể làm'),
-        chef.dishes.length ? el('div', { className: 'admin-list' }, chef.dishes.map((row) => el('article', { className: 'admin-row assigned-dish' }, dishImage(row.dish, 'admin-thumb'),
-          el('div', { className: 'row-copy' }, el('h3', {}, link(`/admin/dishes/${row.dishId}`, row.dish.name)), el('p', {}, `${categoryLabel(row.dish.category)} · ${money(row.dish.price)}`)),
-          link(`${base}/dishes/${row.dishId}/delete`, 'Gỡ món', 'button danger-outline')))) : el('p', { className: 'muted' }, 'Chưa có món nào được gán.')),
-      el('section', { className: 'relation-panel' }, el('h2', {}, 'Thêm món phụ trách'), available.length ? form : el('p', { className: 'muted' }, 'Mọi món đã được gán, hoặc thực đơn đang trống.')));
+
+    let allDishes = null;
+    let dishesLoading = false;
+    let isOpen = false;
+
+    const subtitleNode = el('p', {}, `${chef.specialty} · ${chef.dishes.length} món đã gán`);
+    const headerNode = el('div', { className: 'page-heading' },
+      el('div', {},
+        el('span', { className: 'eyebrow' }, 'SOUCHA / QUẢN TRỊ'),
+        el('h1', {}, chef.name),
+        subtitleNode
+      ),
+      link(`/admin/chefs/${id}/edit`, 'Sửa đầu bếp', 'button secondary')
+    );
+
+    const assignedContainer = el('div', { className: 'assigned-dishes-container' });
+    function renderAssignedDishes() {
+      if (!chef.dishes.length) {
+        assignedContainer.replaceChildren(el('p', { className: 'muted' }, 'Chưa có món nào được gán.'));
+        return;
+      }
+      const list = el('div', { className: 'admin-list' }, chef.dishes.map((row) =>
+        el('article', { className: 'admin-row assigned-dish' },
+          dishImage(row.dish, 'admin-thumb'),
+          el('div', { className: 'row-copy' },
+            el('h3', {}, link(`/admin/dishes/${row.dishId}`, row.dish.name)),
+            el('p', {}, `${categoryLabel(row.dish.category)} · ${money(row.dish.price)}`)
+          ),
+          link(`${base}/dishes/${row.dishId}/delete`, 'Gỡ món', 'button danger-outline')
+        )
+      ));
+      assignedContainer.replaceChildren(list);
+    }
+    renderAssignedDishes();
+
+    const errorBanner = el('p', { className: 'field-error', role: 'alert' });
+    const dropdownContent = el('div', { className: 'dropdown-content', hidden: true });
+
+    function renderAvailableDishes() {
+      const assignedIds = new Set(chef.dishes.map((r) => r.dishId));
+      const available = (allDishes || []).filter((d) => !assignedIds.has(d.id));
+
+      if (!available.length) {
+        dropdownContent.replaceChildren(errorBanner, el('p', { className: 'muted' }, 'Mọi món đã được gán, hoặc thực đơn đang trống.'));
+        return;
+      }
+
+      const list = el('div', { className: 'admin-list' }, available.map((dish) => {
+        let adding = false;
+        const addBtn = el('button', {
+          type: 'button',
+          className: 'button',
+          onClick: async () => {
+            if (adding) return;
+            adding = true;
+            addBtn.disabled = true;
+            addBtn.textContent = 'Đang thêm…';
+            errorBanner.textContent = '';
+            try {
+              const res = await request('chefs', {
+                id,
+                path: 'dishes',
+                method: 'POST',
+                data: { dishId: dish.id },
+                signal: ctx.signal
+              });
+              if (ctx.signal.aborted) return;
+              chef.dishes.push(res && res.dish ? res : { chefId: Number(id), dishId: dish.id, dish });
+              subtitleNode.textContent = `${chef.specialty} · ${chef.dishes.length} món đã gán`;
+              renderAssignedDishes();
+              renderAvailableDishes();
+            } catch (err) {
+              if (ctx.signal.aborted) return;
+              adding = false;
+              addBtn.disabled = false;
+              addBtn.textContent = 'Thêm món';
+              errorBanner.textContent = err.code === 'VALIDATION_FAILED'
+                ? (err.fields.dishId || err.fields._form || err.message)
+                : err.message || 'Không thể thêm món.';
+            }
+          }
+        }, 'Thêm món');
+
+        return el('article', { className: 'admin-row available-dish' },
+          dishImage(dish, 'admin-thumb'),
+          el('div', { className: 'row-copy' },
+            el('h3', {}, link(`/admin/dishes/${dish.id}`, dish.name)),
+            el('p', {}, `${categoryLabel(dish.category)} · ${money(dish.price)}`)
+          ),
+          addBtn
+        );
+      }));
+
+      dropdownContent.replaceChildren(errorBanner, list);
+    }
+
+    const dropdownArrow = el('span', { className: 'dropdown-arrow', 'aria-hidden': 'true' }, '▶');
+    const toggleButton = el('button', {
+      type: 'button',
+      className: 'dropdown-toggle-heading',
+      'aria-expanded': 'false',
+      onClick: async () => {
+        isOpen = !isOpen;
+        toggleButton.setAttribute('aria-expanded', String(isOpen));
+        dropdownContent.hidden = !isOpen;
+        if (!isOpen) return;
+
+        if (!allDishes && !dishesLoading) {
+          dishesLoading = true;
+          dropdownContent.replaceChildren(el('p', { className: 'muted' }, 'Đang tải danh sách món…'));
+          try {
+            allDishes = await request('dishes', { signal: ctx.signal });
+            dishesLoading = false;
+            if (!ctx.signal.aborted) renderAvailableDishes();
+          } catch (err) {
+            dishesLoading = false;
+            if (ctx.signal.aborted) return;
+            dropdownContent.replaceChildren(el('p', { className: 'field-error' }, 'Không thể tải danh sách món. Vui lòng thử lại.'));
+          }
+        } else if (allDishes) {
+          renderAvailableDishes();
+        }
+      }
+    }, dropdownArrow, el('h2', { className: 'dropdown-title' }, 'Thêm món phụ trách'));
+
+    ctx.body.replaceChildren(
+      link('/admin/chefs', '← Quay lại đầu bếp', 'back'),
+      headerNode,
+      el('section', { className: 'relation-panel' },
+        el('h2', {}, 'Món đầu bếp có thể làm'),
+        assignedContainer
+      ),
+      el('section', { className: 'relation-panel dropdown-panel' },
+        toggleButton,
+        dropdownContent
+      )
+    );
   } catch (error) { helpers.errorPanel(error, ctx, '/admin/chefs'); }
 }
 

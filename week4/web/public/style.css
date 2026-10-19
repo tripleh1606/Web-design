@@ -28,3 +28,14 @@ select{font:inherit;width:100%;min-height:46px;padding:10px 12px;border:1px soli
 .search-select-list{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:20;max-height:250px;overflow-y:auto;overscroll-behavior:contain;border:1px solid #cdd8c8;border-radius:10px;background:#fff;box-shadow:0 8px 24px #19391d24;padding:5px}.search-select-list[hidden]{display:none}
 .search-select-option{padding:11px 12px;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.6;overflow-wrap:anywhere}.search-select-option.active{background:#edf0df;color:var(--green)}.search-select-option[aria-selected=true]{font-weight:600}.search-select-empty{margin:0;padding:14px 12px;font-size:12px;color:var(--muted)}
 .search-select-list.is-empty{pointer-events:none}
+/* Collapsible dropdown for adding dishes to chef */
+.dropdown-panel{margin:30px 0}
+button.dropdown-toggle-heading{display:inline-flex;align-items:center;gap:10px;background:transparent;border:0;border-radius:0;min-height:auto;padding:6px 0;cursor:pointer;color:var(--green);text-align:left;font-family:var(--font);font-weight:normal}
+button.dropdown-toggle-heading:hover{background:transparent}
+button.dropdown-toggle-heading:hover .dropdown-title{text-decoration:underline}
+button.dropdown-toggle-heading:focus-visible{outline:3px solid #b5964b;outline-offset:4px}
+.dropdown-title{font-size:20px;color:var(--green);margin:0;font-weight:500}
+.dropdown-arrow{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:12px;color:var(--green);transition:transform .2s ease;transform-origin:center;user-select:none}
+button.dropdown-toggle-heading[aria-expanded="true"] .dropdown-arrow{transform:rotate(90deg)}
+.dropdown-content{margin-top:16px}
+.dropdown-content[hidden]{display:none}

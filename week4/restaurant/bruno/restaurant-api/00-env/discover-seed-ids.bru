@@ -1,0 +1,38 @@
+meta {
+  name: Discover seed ids from menu
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dishes
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+script:post-response {
+  const dishes = res.getBody();
+  if (dishes.ok && Array.isArray(dishes.data)) {
+    const matcha = dishes.data.find((d) => d.name === "Matcha Latte");
+    if (matcha) {
+      bru.setEnvVar("seedDishId", String(matcha.id));
+      bru.setEnvVar("dishId", String(matcha.id));
+    } else if (dishes.data[0]) {
+      bru.setEnvVar("seedDishId", String(dishes.data[0].id));
+      bru.setEnvVar("dishId", String(dishes.data[0].id));
+    }
+  }
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("list dishes for seed discovery", function() {
+    const body = expectOk(res, expect);
+    expect(Array.isArray(body.data)).to.equal(true);
+    expect(body.data.length).to.be.above(0);
+  });
+}

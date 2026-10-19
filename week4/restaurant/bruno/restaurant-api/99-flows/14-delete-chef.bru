@@ -1,0 +1,23 @@
+meta {
+  name: Flow DELETE test chef
+  type: http
+  seq: 14
+}
+
+delete {
+  url: {{baseUrl}}/api/chefs/{{testChefId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("delete chef ok", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.equal(null);
+  });
+}

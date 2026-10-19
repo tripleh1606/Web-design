@@ -1,0 +1,26 @@
+meta {
+  name: GET /api/dishes search sort
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/dishes?q=MATCHA&category=matcha&sort=price-asc
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("filtered list is ok", function() {
+    const body = expectOk(res, expect);
+    expect(Array.isArray(body.data)).to.equal(true);
+    for (const dish of body.data) {
+      expect(dish.category).to.equal("matcha");
+    }
+  });
+}

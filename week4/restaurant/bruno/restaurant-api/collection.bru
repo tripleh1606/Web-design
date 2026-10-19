@@ -1,0 +1,25 @@
+meta {
+  name: Restaurant API
+}
+
+docs {
+  Backend Soucha (week4/restaurant).
+  Base URL: http://localhost:3001 (PORT trong .env).
+  Chạy API: npm run start:be (hoặc dev:be) sau db:push và db:seed.
+  Chạy collection: npm run test:bruno
+
+  Response JSON (business):
+  - Thành công: HTTP 200, { ok: true, data }
+  - Lỗi nghiệp vụ: HTTP 200, { ok: false, error: { code, message, fields? } }
+  - NOT_FOUND, VALIDATION_FAILED
+
+  Lỗi kỹ thuật:
+  - Route không tồn tại: HTTP 404 plain text
+  - JSON sai: HTTP 400 plain text
+  - Payload > 32kb: HTTP 413 plain text
+  - DB lỗi: HTTP 500 plain text (covered in node:test, not Bruno)
+
+  CORS: Origin phải khớp CORS_ORIGIN (mặc định http://localhost:5173).
+
+  Thứ tự folder: 00-env (discover seed) → 01-technical → 02..06 contract → 99-flows (create/write/teardown).
+}

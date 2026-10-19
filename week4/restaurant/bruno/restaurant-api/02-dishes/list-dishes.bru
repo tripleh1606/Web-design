@@ -1,0 +1,24 @@
+meta {
+  name: GET /api/dishes list ok
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dishes
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("list returns ok array", function() {
+    const body = expectOk(res, expect);
+    expect(Array.isArray(body.data)).to.equal(true);
+    expect(res.getHeader("access-control-allow-origin")).to.equal(bru.getEnvVar("corsOrigin"));
+  });
+}

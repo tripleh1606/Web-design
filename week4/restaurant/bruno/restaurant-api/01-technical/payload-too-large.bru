@@ -1,0 +1,28 @@
+meta {
+  name: POST payload too large HTTP 413
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/dishes
+  body: text
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  const big = "x".repeat(40 * 1024);
+  req.setBody(`{"name":"${big}","price":1,"available":true}`);
+}
+
+tests {
+  const { expectPlain } = require("./js/contract");
+  test("413 plain without ok envelope", function() {
+    expectPlain(res, expect, 413);
+  });
+}

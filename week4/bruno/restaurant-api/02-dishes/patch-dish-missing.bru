@@ -1,0 +1,29 @@
+meta {
+  name: PATCH /api/dishes/999999 NOT_FOUND
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/999999
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "price": 1000
+  }
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("patch missing NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

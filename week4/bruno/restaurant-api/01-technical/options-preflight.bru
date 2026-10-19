@@ -1,0 +1,27 @@
+meta {
+  name: OPTIONS preflight CORS
+  type: http
+  seq: 3
+}
+
+options {
+  url: {{baseUrl}}/api/dishes/1
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Access-Control-Request-Method: PATCH
+  Access-Control-Request-Headers: Content-Type
+}
+
+tests {
+  test("preflight 204 with CORS headers", function() {
+    expect(res.getStatus()).to.equal(204);
+    expect(res.getHeader("access-control-allow-origin")).to.equal(bru.getEnvVar("corsOrigin"));
+    expect(res.getHeader("access-control-allow-methods")).to.match(/PATCH/);
+    expect(res.getHeader("access-control-allow-methods")).to.match(/DELETE/);
+    expect(res.getHeader("access-control-allow-headers")).to.match(/content-type/i);
+  });
+}

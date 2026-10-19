@@ -151,6 +151,19 @@ npm run test:browser
 npm run test:live
 ```
 
+### Bruno (contract trên API đang chạy)
+
+API phải listen `PORT` (mặc định 3001), ví dụ `npm start --workspace @soucha/api`.
+
+```powershell
+npm run test:bruno
+```
+
+Collection: `bruno/restaurant-api`.
+Báo cáo: `bruno/restaurant-api/TEST-PLAN.md`.
+Ma trận: `bruno/restaurant-api/TEST-MATRIX.md`.
+
+
 Browser test mặc định dùng Google Chrome đã cài. Có thể chỉ định Chromium/Edge bằng `BROWSER_EXECUTABLE` nếu máy không có Chrome:
 
 ```powershell

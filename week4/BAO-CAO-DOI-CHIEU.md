@@ -8,6 +8,8 @@ Ngày thực hiện: 19/10/2026. Đề đối chiếu: `../REST-API-và-SPA.md`,
 
 - `npm test`: **16/16 nhóm kiểm thử đạt**, chạy HTTP thật, SQLite riêng và SQL trên PostgreSQL cục bộ.
 - `npm run test:browser`: **20/20 nhóm kiểm thử đạt**, chạy Chrome với API và SPA ở hai origin khác nhau.
+- `npm run test:bruno`: **67/67 tests đạt** — technical 403/404/400/413 + business NOT_FOUND/VALIDATION_FAILED + flow ghi. Báo cáo: [bruno/restaurant-api/TEST-PLAN.md](./bruno/restaurant-api/TEST-PLAN.md).
+
 - Đã xem lại ảnh desktop và mobile, kiểm tra menu, danh sách quản trị và form.
 - Đã bổ sung công thức, tạo nguyên liệu ngay trong form món, tính số phần, gán món cho đầu bếp và lọc/sắp xếp theo restaurant tuần 3. Chi tiết xem [DOI-CHIEU-WEEK3.md](./DOI-CHIEU-WEEK3.md).
 - Schema/SQL PostgreSQL đã được kiểm thử cục bộ. Kết nối project Supabase thật còn cần DATABASE_URL do người dùng điền vào api/.env; không khẳng định đã kết nối khi chưa có URL thật.

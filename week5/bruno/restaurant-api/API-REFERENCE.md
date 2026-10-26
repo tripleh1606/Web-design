@@ -1,4 +1,4 @@
-# Restaurant API — Bruno (week4)
+# Restaurant API — Bruno (week5)
 
 Base: `{{baseUrl}}` = `http://localhost:3001`.
 Header: `Origin: {{corsOrigin}}` (= `SPA_ORIGIN`, mặc định `http://localhost:5173`).

@@ -7,11 +7,12 @@ Nguồn cấu trúc: `week3/restaurant/prisma/schema.prisma`. Nguồn dữ liệ
 - `001-schema.sql`: PostgreSQL DDL cho `dishes`, `chefs`, `ingredients`, `dish_ingredients`, `chef_dishes`; giữ nguyên tên bảng/cột, khóa chính và cascade của tuần 3. Chạy cho **database mới trống**.
 - `002-seed.sql`: tám món Soucha, hai đầu bếp, ba nguyên liệu, sáu dòng công thức và bốn liên kết đầu bếp–món. Chỉ chèn mẫu còn thiếu; không cập nhật giá/tồn kho hiện có.
 
-Nếu dùng **đúng Supabase của tuần 3**, chỉ đặt `DATABASE_URL` vào `week4/api/.env`; các model trỏ đúng bảng cũ nên dữ liệu hiện có được đọc trực tiếp, không cần chạy lại file tạo bảng hay sao chép dữ liệu sang SQLite.
+Nếu dùng **đúng Supabase của tuần 3**, đặt `DATABASE_URL` vào `week5/api/.env`; các model trỏ đúng bảng cũ nên dữ liệu hiện có được đọc trực tiếp, không cần chạy lại file tạo bảng hay sao chép dữ liệu sang SQLite. Chạy `npm run db:search-setup` để bổ sung cột/index, extension, helper và trigger tìm kiếm cho week5.
 
 ```powershell
-cd D:\Minh\Web-design\week4
+cd D:\WebApplication\Web-design\week5
 npm run db:generate --workspace @soucha/api
+npm run db:search-setup
 npm run test:live
 npm run dev
 ```
@@ -26,7 +27,7 @@ Nếu database mới chưa có bảng, có thể chạy `npm run setup` (Prisma 
 npm run db:sql
 ```
 
-Lệnh này chỉ dùng schema và dữ liệu mẫu trong source, không kết nối database. `001-schema.sql` sinh bằng Prisma migrate diff, `002-seed.sql` sinh từ `seed-data.js` dùng chung với seed Prisma nên không có hai bộ dữ liệu mẫu lệch nhau.
+Lệnh này chỉ dùng schema và dữ liệu mẫu trong source, không kết nối database. `001-schema.sql` sinh bằng Prisma migrate diff và nối thêm SQL thiết lập tìm kiếm; `002-seed.sql` sinh từ `seed-data.js` dùng chung với seed Prisma nên không có hai bộ dữ liệu mẫu lệch nhau.
 
 ## Kiểm chứng
 

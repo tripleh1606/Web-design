@@ -32,7 +32,7 @@ POST {{api}}/api/dishes
 Content-Type: application/json
 Origin: {{origin}}
 
-{"name":"Món demo HTTP", "description":"Bài tuần 4", "price":35000, "category":"matcha", "available":true}
+{"name":"Món demo HTTP", "description":"Bài tuần 5", "price":35000, "category":"matcha", "available":true}
 
 @dishId = REPLACE_WITH_CREATED_ID
 

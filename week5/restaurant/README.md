@@ -9,7 +9,7 @@ Frontend là một trang chạy trong trình duyệt và gọi API bằng axios.
 Cần Node.js 20 trở lên và Session pooler URL (cổng 5432) của Supabase.
 
 ```sh
-cd code/week4/restaurant
+cd D:/WebApplication/Web-design/week5/restaurant
 npm install
 cp .env.example .env
 ```

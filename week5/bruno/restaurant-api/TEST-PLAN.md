@@ -1,6 +1,6 @@
-# Báo cáo kiểm thử API — Week 4 Bruno
+# Báo cáo kiểm thử API — Week 5 Bruno
 
-**Dự án:** `source-code/Web-design/week4` (Soucha REST API + SPA)
+**Dự án:** `Web-design/week5` (Soucha REST API + SPA)
 **Công cụ:** Bruno CLI — `npm run test:bruno`
 **Môi trường:** API `http://localhost:3001`, DB đã seed (`npm run setup`), env Bruno `local`
 
@@ -18,7 +18,7 @@
 Lệnh:
 
 ```sh
-cd source-code/Web-design/week4
+cd D:/WebApplication/Web-design/week5
 npm start --workspace @soucha/api   # terminal 1
 npm run test:bruno                  # terminal 2
 ```
@@ -27,7 +27,7 @@ npm run test:bruno                  # terminal 2
 
 ## 2. Mục tiêu kiểm thử
 
-API week4 trả **hai lớp lỗi** khác nhau.
+API week5 trả **hai lớp lỗi** khác nhau.
 SPA (`web/src/api.js`) dựa vào lớp đó, không chỉ nhìn HTTP status.
 
 | Loại | Khi nào | Kỳ vọng |
@@ -61,16 +61,16 @@ Technical errors không dùng envelope đó để SPA tách nhánh xử lý.
 
 ### 3.3 CRUD dishes / chefs / ingredients (`02`–`04`)
 
-**Test gì:** List/get ok; id `abc`/`0`/`999999` → `NOT_FOUND`; POST thiếu/sai kiểu → `VALIDATION_FAILED`; image sai path; PATCH thiếu id / giá trị âm; PATCH `{}` → `VALIDATION_FAILED` + `_form` (week4 bắt buộc ít nhất một field); dishes search/sort.
+**Test gì:** List/get ok; id `abc`/`0`/`999999` → `NOT_FOUND`; POST thiếu/sai kiểu → `VALIDATION_FAILED`; image sai path; PATCH thiếu id / giá trị âm; PATCH `{}` → `VALIDATION_FAILED` + `_form` (week5 bắt buộc ít nhất một field); dishes search/sort.
 
 **Vì sao:** Đây là hợp đồng CRUD chính mà SPA admin dùng.
-PATCH rỗng phải fail theo validation week4 (khác bản restaurant trả nguyên bản ghi).
+PATCH rỗng phải fail theo validation week5 (khác bản restaurant trả nguyên bản ghi).
 
 ### 3.4 Công thức (`05-recipe`)
 
 **Test gì:** GET `/api/dishes/:id/ingredients`; POST amount 0 / thiếu field / ingredient không tồn tại / dish thiếu; PATCH/DELETE link thiếu; amount invalid.
 
-**Vì sao:** Quan hệ dish–ingredient; week4 dùng path `/ingredients` (không có `/recipe`).
+**Vì sao:** Quan hệ dish–ingredient; week5 dùng path `/ingredients` (không có `/recipe`).
 
 ### 3.5 Gán đầu bếp (`06-chef-dishes`)
 

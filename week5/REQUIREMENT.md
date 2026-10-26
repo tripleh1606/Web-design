@@ -1,6 +1,6 @@
-# Yêu cầu bài tập REST API và SPA — tuần 4
+# Yêu cầu nền REST API và SPA cho week5
 
-Nguồn: `../REST-API-và-SPA.md`, phần Bài tập đến Tiêu chí nghiệm thu và speaker notes tương ứng. Đây là phần trích yêu cầu, không phải chép toàn bộ nội dung bài giảng.
+Nguồn kế thừa từ bài tuần 4: `../REST-API-và-SPA.md`, phần Bài tập đến Tiêu chí nghiệm thu và speaker notes tương ứng. Đây là phần trích yêu cầu nền REST API + SPA, không phải toàn bộ đề tìm kiếm/phân trang của week5; tài liệu bài học tuần này nằm trong `slide-knowledge/`.
 
 ## 1. Kiến trúc và dữ liệu
 
@@ -85,8 +85,8 @@ Lặp lại các trang **quản trị** cho chefs và ingredients cùng cấu tr
 
 ## 5. Yêu cầu bổ sung của người dùng sau bài gốc
 
-- Mang chức năng từ `week3/restaurant` qua: công thức món, amount/stock, số phần, gán/gỡ món cho đầu bếp; giữ tính chất SPA và REST API tuần 4.
+- Mang chức năng từ `week3/restaurant` qua: công thức món, amount/stock, số phần, gán/gỡ món cho đầu bếp; giữ tính chất SPA và hợp đồng REST API kế thừa.
 - Thêm nguyên liệu ngay trong form thêm món, gồm chọn nguyên liệu tồn tại và tạo mới; lưu nguyên tử cùng món.
 - Khôi phục PostgreSQL/Supabase và chuyển schema/seed SQL theo tuần 3; kết nối thật sau khi người dùng điền DATABASE_URL trong api/.env.
 - Sửa font chữ tiếng Việt, thống nhất family và phục vụ font cục bộ.
-- Có file đối chiếu bổ sung: `DOI-CHIEU-WEEK3.md`.
+- Có file đối chiếu bổ sung: `DOI-CHIEU-WEEK4.md`.

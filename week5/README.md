@@ -1,13 +1,13 @@
-# Week 4 — Soucha REST API và SPA
+# Week 5 — Soucha: tìm kiếm và phân trang
 
-Bài tiếp nối `week3/restaurant`, theo đề `../REST-API-và-SPA.md`, bao gồm cả speaker notes. Giữ giao diện, logo, ảnh, seed và model từ tuần 3; tách phần backend trả JSON và frontend chạy trong browser.
+Bài mở rộng tìm kiếm và phân trang trên nền REST API + SPA, kế thừa đề `../REST-API-và-SPA.md` và dữ liệu từ `week3/restaurant`. Backend trả JSON, frontend chạy trong browser; week5 bổ sung full-text search, tìm gần đúng và ba UI phân trang. Yêu cầu nền xem [REQUIREMENT.md](./REQUIREMENT.md); kiến thức tuần này nằm trong `slide-knowledge/`.
 
 ## Chạy nhanh
 
-Yêu cầu Node.js 20+ và npm. Từ thư mục `week4`:
+Yêu cầu Node.js 20+ và npm. Từ thư mục `week5`:
 
 ```powershell
-cd D:\Minh\Web-design\week4
+cd D:\WebApplication\Web-design\week5
 npm install
 npm run setup
 npm run dev
@@ -45,9 +45,9 @@ API_BASE_URL="http://localhost:3001/api"
 
 Origin phải trùng chính xác (giao thức, hostname, port), không có `/` cuối. `localhost` và `127.0.0.1` là hai hostname khác nhau. Khi đổi port, cập nhật cả `SPA_ORIGIN` và `API_BASE_URL` nếu liên quan. Không có proxy API; browser gọi trực tiếp origin của API để thực hành CORS.
 
-`schema.prisma` dùng PostgreSQL, giữ nguyên model/bảng/quan hệ của `week3/restaurant`. Dùng cùng `DATABASE_URL` thì tuần 4 đọc trực tiếp các bảng và dữ liệu Supabase của tuần 3. Không cần chạy SQL tạo bảng lại trên database cũ. Sau khi điền URL, chạy `npm run db:generate --workspace @soucha/api`, `npm run test:live`, rồi restart API. Không in hoặc gửi URL có mật khẩu lên chat.
+`schema.prisma` dùng PostgreSQL, kế thừa model/bảng/quan hệ của `week3/restaurant` và bổ sung cột `fts` cùng các index phục vụ tìm kiếm. Dùng cùng `DATABASE_URL` thì week5 đọc trực tiếp dữ liệu Supabase hiện có. Không cần chạy SQL tạo bảng lại trên database cũ. Sau khi điền URL, chạy `npm run db:generate --workspace @soucha/api`, `npm run db:search-setup`, `npm run test:live`, rồi restart API. Không in hoặc gửi URL có mật khẩu lên chat.
 
-Hai file [SQL PostgreSQL](./api/sql/README.md) nằm tại `api/sql/001-schema.sql` và `002-seed.sql`, sinh từ schema/seed của tuần 3. Đã kiểm thử SQL bằng PostgreSQL cục bộ qua PGlite; kết nối Supabase thật cần URL trên máy bạn.
+Hai file [SQL PostgreSQL](./api/sql/README.md) nằm tại `api/sql/001-schema.sql` và `002-seed.sql`, kế thừa schema/seed tuần 3 và bổ sung phần tìm kiếm của week5. Đã kiểm thử SQL bằng PostgreSQL cục bộ qua PGlite; kết nối Supabase thật cần URL trên máy bạn.
 
 Có thể tiếp tục chạy SQLite độc lập bằng `DATABASE_URL="file:./soucha.db"`. File `api/.env.sqlite.example` có sẵn cấu hình local. Runtime tự chọn client và schema đúng provider, không cần sửa source và không ghi đè `.env`. Dữ liệu SQLite cũ vẫn tại `api/prisma/soucha.db`; đổi URL sang Supabase không tự chép các bản ghi local lên server.
 
@@ -78,9 +78,10 @@ Danh sách 28 Chef đã chuyển sang thứ tự tên Việt Nam, chuyên môn P
 ## Cấu trúc
 
 ```text
-week4/
+week5/
   api/
-    prisma/schema.prisma     PostgreSQL, model và quan hệ kế thừa tuần 3
+    prisma/schema.prisma     PostgreSQL, quan hệ kế thừa và cột/index tìm kiếm
+    prisma/search-setup.sql  Extension, helper và trigger cập nhật FTS
     prisma/schema.sqlite.prisma  Database local/test độc lập
     prisma/seed.js           Tám món Soucha, đầu bếp, nguyên liệu, liên kết mẫu
     src/app.js              Route, response, CORS, lỗi kỹ thuật
@@ -95,6 +96,7 @@ week4/
     server.js              Static server, fallback index.html, cấu hình public
     src/app.js             History router và các trang
     src/api.js             Lớp fetch, ba tầng lỗi
+    src/menu-pagination.js Ba UI phân trang, tìm kiếm và lọc thực đơn
     src/resources.js       Cấu hình form và validate phía client
     src/dom.js             Dựng DOM an toàn bằng textContent/DOM properties
     src/recipe-editor.js   Nguyên liệu có sẵn/tạo mới trong form món
@@ -143,6 +145,8 @@ Trang thực đơn có thanh chọn **Số trang / Tải thêm / Cuộn liên t�
 - `/dishes?view=infinite&pageSize=12`: Cuộn gần cuối để tải tiếp; khi mở lại link bắt đầu từ page 1; có nút Tải thêm dự phòng.
 
 UI mặc định 12 món/lượt, chọn 12 / 24 / 36 / 48 / 96 để khớp 4 món/hàng. Liên kết cũ có kích thước chưa phù hợp được làm tròn lên bội số 4, tối thiểu 12 và khởi động lại từ trang 1; filter/sort được giữ nguyên. API vẫn nhận 1–100 theo hợp đồng cũ.
+
+Ở kiểu Số trang, bấm dấu `…` để mở hộp nhập số trang cần đến. Số trang phải là số nguyên trong phạm vi hiện có; chuyển trang giữ nguyên từ khóa, bộ lọc, sắp xếp và số món mỗi lượt.
 
 Đổi điều kiện hoặc kiểu xem bắt đầu lại từ đầu, không trộn response cũ. Tải tiếp lỗi giữ cards cũ và thử lại đúng trang. [Đối chiếu HTML bài giảng](./docs/doi-chieu-html-pagination.md). Kiểm tra riêng UI bằng `npm run test:pagination:browser`; ảnh và báo cáo tạo trong `tests/results/`.
 
@@ -215,4 +219,4 @@ npm run test:browser
 
 `npm run test:live` là lệnh riêng, chỉ đọc số bản ghi từ database thật theo `api/.env`; không ghi/xóa và không in URL. Nếu kết quả vẫn có `provider: sqlite` thì `.env` chưa đổi sang PostgreSQL.
 
-Request HTTP để chạy lại nằm ở `docs/requests.http`. Báo cáo đề gốc xem `BAO-CAO-DOI-CHIEU.md`; đối chiếu đầy đủ bản restaurant tuần 3, SQL và font xem [DOI-CHIEU-WEEK3.md](./DOI-CHIEU-WEEK3.md).
+Request HTTP để chạy lại nằm ở `docs/requests.http`. Báo cáo phần mở rộng week5 xem [BAO-CAO-DOI-CHIEU.md](./BAO-CAO-DOI-CHIEU.md); đối chiếu lộ trình từ restaurant tuần 3 đến tuần 5 xem [DOI-CHIEU-WEEK4.md](./DOI-CHIEU-WEEK4.md).

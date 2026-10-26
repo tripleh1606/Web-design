@@ -1,5 +1,5 @@
 /**
- * Shared Bruno helpers for week4 API contract.
+ * Shared Bruno helpers for week5 API contract.
  * Business: HTTP 200 + { ok: true|false }.
  * Technical: HTTP 4xx/5xx JSON { message } without ok.
  */

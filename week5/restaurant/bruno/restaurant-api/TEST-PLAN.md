@@ -1,6 +1,6 @@
 # Báo cáo kiểm thử API — Restaurant (Bruno)
 
-**Dự án:** Soucha restaurant backend (`code/week4/restaurant`)
+**Dự án:** Soucha restaurant backend (`Web-design/week5/restaurant`)
 **Công cụ:** Bruno CLI — `npm run test:bruno`
 **Môi trường:** API `http://localhost:3001`, DB đã seed, env `local`
 

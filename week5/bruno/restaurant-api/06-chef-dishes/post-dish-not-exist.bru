@@ -1,0 +1,30 @@
+meta {
+  name: POST assign missing dish FK
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "dishId": 999999
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("unknown dish VALIDATION_FAILED", function() {
+    const body = expectValidation(res, expect, ["dishId"]);
+    expect(body.error.fields.dishId).to.match(/không tồn tại/i);
+  });
+}

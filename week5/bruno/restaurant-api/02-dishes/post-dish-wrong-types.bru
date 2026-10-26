@@ -1,0 +1,31 @@
+meta {
+  name: POST /api/dishes wrong types
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "",
+    "price": "48000",
+    "available": "true"
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("wrong types VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["name", "price", "available"]);
+  });
+}

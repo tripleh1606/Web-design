@@ -1,0 +1,23 @@
+meta {
+  name: Flow unassign dish
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{baseUrl}}/api/chefs/{{testChefId}}/dishes/{{testDishId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("unassign returns null data", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.equal(null);
+  });
+}

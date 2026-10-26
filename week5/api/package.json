@@ -1,0 +1,19 @@
+{
+  "name": "@soucha/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:generate": "node ../scripts/database.js generate",
+    "db:push": "node ../scripts/database.js push",
+    "db:seed": "node ../scripts/database.js seed"
+  },
+  "prisma": { "seed": "node prisma/seed.js" },
+  "dependencies": {
+    "@prisma/client": "6.12.0",
+    "dotenv": "16.6.1",
+    "express": "4.21.2"
+  },
+  "devDependencies": { "prisma": "6.12.0" }
+}

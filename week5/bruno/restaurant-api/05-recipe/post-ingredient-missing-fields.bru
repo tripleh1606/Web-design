@@ -1,0 +1,27 @@
+meta {
+  name: POST recipe missing fields
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("missing fields VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["ingredientId", "amount"]);
+  });
+}

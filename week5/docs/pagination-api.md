@@ -14,13 +14,14 @@ Route tĩnh `/paged` được đăng ký trước `/api/dishes/:id`. Endpoint c�
 | --- | --- | --- |
 | `page` | `1` | Số nguyên dương; giữ nguyên trang được yêu cầu kể cả vượt phạm vi |
 | `pageSize` | `10` | Số nguyên từ 1 đến 100 |
-| `q` | Không có điều kiện tên | Trim, tối đa 120 ký tự; tên chứa chuỗi, không phân biệt hoa/thường trên PostgreSQL |
+| `mode` | `basic` ở API; UI gửi `smart` mặc định | `basic` tìm chuỗi trong tên; `fulltext` tìm các từ trên tên + mô tả; `smart` kết hợp full-text và tên gần đúng |
+| `q` | Không có điều kiện tên ở basic | Trim, tối đa 120 ký tự; fulltext bắt buộc có q |
 | `category` | Không lọc | `coffee`, `matcha`, `houjicha` |
 | `minPrice`, `maxPrice` | Không giới hạn tương ứng | Số nguyên 0–2147483647; bao gồm hai đầu; min không lớn hơn max |
 | `available` | Không lọc | Chỉ `true` hoặc `false` |
-| `sort` | `id-asc` | `id-asc`, `id-desc`, `name-asc`, `name-desc`, `price-asc`, `price-desc` |
+| `sort` | `id-asc` khi không tìm thông minh; `relevance` ở fulltext hoặc smart có q | Basic: id/tên/giá tăng giảm. Fulltext chỉ nhận relevance. Smart có q cho phép relevance hoặc id/tên/giá, thêm id ASC khi bằng điểm |
 
-Chuỗi trắng ở điều kiện tùy chọn được bỏ qua. `page=`/`pageSize=` rỗng, số thập phân, ký hiệu mũ, giá trị lặp và query parameter không hỗ trợ đều là lỗi. Offset `(page - 1) * pageSize` tối đa 2147483647. `q` là literal contains, không tự bỏ dấu, không phải full-text/fuzzy; `mode` chưa thuộc contract của endpoint phân trang này.
+Chuỗi trắng ở điều kiện tùy chọn được bỏ qua. `page=`/`pageSize=` rỗng, số thập phân, ký hiệu mũ, giá trị lặp và query parameter không hỗ trợ đều là lỗi. Offset `(page - 1) * pageSize` tối đa 2147483647. Fulltext dùng PostgreSQL `simple`; Smart thêm so sánh từng từ bằng trigram và nhận diện đảo chữ liền kề. Chi tiết và giới hạn: [full-text-search.md](./full-text-search.md).
 
 ```json
 {
@@ -55,7 +56,7 @@ Tải thêm/Cuộn liên tục có thể tải trước tối đa một trang k�
 
 Tất cả điều kiện được kết hợp bằng AND trước khi sắp xếp và phân trang. `COUNT` và phần `LIMIT/OFFSET` sử dụng cùng predicate trong một câu SQL và cùng snapshot, giảm số lượt giao tiếp Supabase. LEFT JOIN giữ total khi trang rỗng. `available=false` và giá 0 không bị coi là thiếu điều kiện. Giá/tên trùng nhau luôn có `id ASC` làm thứ tự phụ; mặc định là `id ASC`.
 
-Giá trị request được bind qua `Prisma.sql`. SQL sắp xếp được chọn từ hằng số của server. Từ khóa có `%`, `_`, `!` được escape riêng để không trở thành wildcard. Trên Supabase/PostgreSQL, biểu thức `LOWER(name) LIKE LOWER(pattern) ESCAPE '!'` thực hiện tìm chứa chuỗi không phân biệt hoa/thường; không tải toàn bộ món về Node rồi mới cắt mảng. SQLite chỉ dùng cho local/test, hàm `LOWER` tích hợp của SQLite không hỗ trợ đầy đủ chữ hoa/thường Unicode như PostgreSQL.
+Giá trị request được bind qua `Prisma.sql`. Basic dùng `LOWER(name) LIKE LOWER(pattern) ESCAPE '!'`, escape `%`, `_`, `!` theo nghĩa literal. Fulltext dùng `fts @@ plainto_tsquery('simple', q)` và `ts_rank` giảm dần, có GIN index. Smart xếp khớp full-text trước, sau đó tên gần đúng với từng từ khóa (trigram >= 0.3, có chặn độ dài và nhận diện đảo chữ). Cả ba được phân trang tại database, không tải toàn bộ món về Node để cắt mảng. SQLite dùng cho local/test basic; fulltext và smart có q yêu cầu PostgreSQL và sẽ báo rõ nếu provider không hỗ trợ.
 
 Thứ tự ổn định ngăn trùng/mất món khi dataset không đổi. Offset có thể dịch khi người khác thêm/xóa hoặc đổi giá/tên giữa các request. Đây là giới hạn được công bố của offset pagination; backend không cam kết snapshot chung cho toàn bộ một phiên cuộn.
 

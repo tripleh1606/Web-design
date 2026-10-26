@@ -10,7 +10,7 @@ const failure = (res, code, message, fields) => res.status(200).json({
 });
 const notFound = (res) => failure(res, 'NOT_FOUND', 'Bản ghi không tồn tại.');
 
-function createApp({ prisma, spaOrigin, logger = console }) {
+function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql' }) {
   if (!prisma) throw new Error('Prisma client is required.');
   const origin = new URL(spaOrigin);
   if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== spaOrigin) {
@@ -41,6 +41,9 @@ function createApp({ prisma, spaOrigin, logger = console }) {
     if (Object.keys(fields).length) return res.status(200).json({
       ok: false, data: null,
       error: { code: 'VALIDATION_FAILED', message: 'Điều kiện phân trang không hợp lệ.', fields }
+    });
+    if ((value.mode === 'fulltext' || (value.mode === 'smart' && value.q !== undefined)) && provider !== 'postgresql') return res.status(200).json({
+      ok: false, data: null, error: { code: 'FULLTEXT_REQUIRES_POSTGRESQL', message: 'Tìm kiếm Full-text/Thông minh cần PostgreSQL/Supabase. Với SQLite, chọn Theo tên.' }
     });
     const data = await dishPage(prisma, value);
     return res.status(200).json({ ok: true, data, error: null });

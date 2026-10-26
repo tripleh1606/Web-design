@@ -17,7 +17,7 @@ async function fixture() {
   const prisma = createPrisma({ url: databaseUrl });
   const logs = [];
   let spaOrigin = 'http://localhost:5173';
-  const app = createApp({ prisma, spaOrigin, logger: { error: (...args) => logs.push(args) } });
+  const app = createApp({ prisma, provider: 'sqlite', spaOrigin, logger: { error: (...args) => logs.push(args) } });
   const server = app.listen(0);
   await once(server, 'listening');
   const apiUrl = 'http://localhost:' + server.address().port;
@@ -35,7 +35,7 @@ async function fixture() {
       webServer.listen(0);
       await once(webServer, 'listening');
       spaOrigin = 'http://localhost:' + webServer.address().port;
-      const browserApi = createApp({ prisma, spaOrigin, logger: { error: (...args) => logs.push(args) } });
+      const browserApi = createApp({ prisma, provider: 'sqlite', spaOrigin, logger: { error: (...args) => logs.push(args) } });
       server.removeAllListeners('request');
       server.on('request', browserApi);
       return spaOrigin;

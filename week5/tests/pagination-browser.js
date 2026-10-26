@@ -43,7 +43,8 @@ async function main() {
     }
     await check('Numbered pagination restores URL, reload, copied link and Back/Forward without document navigation', async () => {
       const expected = [...records].sort((a, b) => a.price - b.price || a.id - b.id);
-      await page.goto(origin + '/dishes?view=pages&page=2&pageSize=10&sort=price-asc');
+      // Keep name-search semantics in this SQLite suite; smart search is covered on PostgreSQL.
+      await page.goto(origin + '/dishes?mode=basic&view=pages&page=2&pageSize=10&sort=price-asc');
       await count(10);
       assert.deepEqual(await ids(), expected.slice(10, 20).map((row) => row.id));
       assert.match(await page.locator('.result-count').innerText(), /11–20 \/ 39/);
@@ -121,7 +122,7 @@ async function main() {
       await page.unroute('**/api/dishes/paged?**');
       await page.reload();
       await count(10);
-      assert.match(await page.locator('.pagination-policy').innerText(), /tải từ đầu/);
+      assert.match(await page.locator('.pagination-policy:not(.fulltext-hint)').innerText(), /tải từ đầu/);
     });
     await check('A failed next page preserves cards and retries exactly that page', async () => {
       let attempts = 0;
@@ -209,6 +210,8 @@ async function main() {
       assert.match(await page.locator('[data-state="empty"]').innerText(), /Trang này chưa có món/);
       await page.getByRole('link', { name: 'Về trang đầu' }).click();
       await count(10);
+      await page.locator('#menu-mode').selectOption('basic');
+      await count(10);
       await page.getByRole('searchbox').fill('no-match-here');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
       await ready();
@@ -236,10 +239,23 @@ async function main() {
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const button = await page.locator('[data-load-next]').elementHandle();
       await page.locator('[data-load-next]').scrollIntoViewIfNeeded();
-      const start = await page.evaluate(() => performance.now());
+      // Measure browser click -> DOM update, excluding Playwright's actionability
+      // waits and transport overhead when other browser suites run concurrently.
+      await page.evaluate(() => {
+        let started;
+        window.__appendLatency = undefined;
+        const observer = new MutationObserver(() => {
+          if (started !== undefined && document.querySelectorAll('.dish-card').length === 20) {
+            window.__appendLatency = performance.now() - started;
+            observer.disconnect();
+          }
+        });
+        observer.observe(document.querySelector('[data-menu-grid]'), { childList: true });
+        document.querySelector('[data-load-next]').addEventListener('click', () => { started = performance.now(); }, { capture: true, once: true });
+      });
       await page.locator('[data-load-next]').click();
       await count(20);
-      const elapsed = await page.evaluate((start) => performance.now() - start, start);
+      const elapsed = await page.evaluate(() => window.__appendLatency);
       assert.ok(elapsed < 300, `ready page took ${elapsed}ms to display`);
       assert.equal(secondRequests, 1);
       assert.equal(await button.evaluate((node) => node.isConnected), true);

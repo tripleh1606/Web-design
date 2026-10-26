@@ -56,4 +56,4 @@ npm run test:pagination:live
 
 Lỗi phát hiện khi nối UI: URL `?view=infinite&pageSize=2` gửi đúng 2 món/lượt nhưng select ban đầu chỉ có 10/20/50/100 nên hiển thị nhầm 10. Đã thêm option tương ứng với pageSize hợp lệ từ URL. Kiểm tra browser vừa xác nhận select là `2`, vừa xác nhận các request liên tiếp có số trang không trùng. Đây cũng là tình huống kiểm tra sentinel còn trong viewport sau lượt đầu.
 
-Phạm vi tài liệu này là ba UI phân trang. Bốn chế độ search `basic/advanced/fulltext/fuzzy` ở các slide khác là phần yêu cầu riêng; thay đổi UI này dùng tìm tên literal contains và các điều kiện đã có trên API phân trang, không tuyên bố đã hoàn thành toàn bộ phần search của bài giảng.
+Phạm vi chính của tài liệu này là ba UI phân trang. Week5 có `mode=fulltext` tìm trên tên + mô tả và xếp hạng; UI mặc định `mode=smart` thêm chịu lỗi gõ trong tên món. Cả hai dùng được với ba UI; xem [full-text-search.md](./full-text-search.md). Các điều kiện category/giá/available kết hợp AND với tìm kiếm. Chưa có mode advanced riêng; không tuyên bố đã hoàn thành toàn bộ các chế độ search của bài giảng.

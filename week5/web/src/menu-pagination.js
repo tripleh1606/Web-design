@@ -3,7 +3,7 @@ import { el, link } from './dom.js';
 import { createPageBuffer } from './page-buffer.js';
 
 const VIEWS = [['pages', 'Số trang', '01'], ['more', 'Tải thêm', '02'], ['infinite', 'Cuộn liên tục', '03']];
-const FILTER_KEYS = ['q', 'category', 'minPrice', 'maxPrice', 'available', 'sort'];
+const FILTER_KEYS = ['q', 'mode', 'category', 'minPrice', 'maxPrice', 'available', 'sort'];
 const SORTS = [['', 'Mặc định'], ['id-desc', 'Mới nhất'], ['name-asc', 'Tên A → Z'], ['name-desc', 'Tên Z → A'], ['price-asc', 'Giá tăng dần'], ['price-desc', 'Giá giảm dần']];
 
 function menuUrl(base, changes = {}, { reset = false } = {}) {
@@ -38,15 +38,24 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
   const pageSize = url.searchParams.get('pageSize') || '10';
   const initialPage = view === 'pages' ? url.searchParams.get('page') || '1' : '1';
   const applied = Object.fromEntries(FILTER_KEYS.map((key) => [key, url.searchParams.get(key) || '']));
-  const search = el('input', { name: 'q', type: 'search', value: applied.q, maxLength: 120, placeholder: 'Bạn muốn uống gì hôm nay?', 'aria-label': 'Tìm món theo tên' });
+  applied.mode ||= 'smart';
+  const fulltext = applied.mode === 'fulltext';
+  const smart = applied.mode === 'smart';
+  const ranked = fulltext || (smart && Boolean(applied.q.trim()));
+  const search = el('input', { name: 'q', type: 'search', value: applied.q, maxLength: 120, placeholder: 'Ví dụ: houjicha whisk hoặc houjcha whsk', 'aria-label': 'Tìm món' });
+  search.required = fulltext;
   const resetUrl = menuUrl(new URL('/dishes', url), { view, pageSize });
   const submit = () => {
-    const changes = { q: search.value.trim(), category: category.value, sort: sort.value,
+    const q = search.value.trim();
+    const requestedSort = sort.value === 'relevance' && searchMode.value !== 'fulltext' && !q ? '' : sort.value;
+    const changes = { q, mode: searchMode.value, category: category.value, sort: requestedSort,
       available: available.value, minPrice: minPrice.value, maxPrice: maxPrice.value };
     navigate(menuUrl(url, changes, { reset: true }));
   };
+  const searchMode = select('menu-mode', [['smart', 'Thông minh · gần đúng'], ['basic', 'Theo tên · nguyên cụm'], ['fulltext', 'Full-text · đúng từ']], applied.mode, () => { sort.value = ''; submit(); });
   const category = select('menu-category', [['', 'Tất cả danh mục'], ['coffee', 'Coffee'], ['matcha', 'Matcha'], ['houjicha', 'Houjicha']], applied.category, submit);
-  const sort = select('menu-sort', SORTS, applied.sort, submit);
+  const sort = select('menu-sort', fulltext ? [['relevance', 'Liên quan nhất']] : ranked ? [['relevance', 'Liên quan nhất'], ...SORTS] : SORTS, applied.sort || (ranked ? 'relevance' : ''), submit);
+  sort.disabled = fulltext;
   const available = select('menu-available', [['', 'Tất cả trạng thái'], ['true', 'Đang phục vụ'], ['false', 'Tạm hết']], applied.available, submit);
   const minPrice = el('input', { id: 'menu-minPrice', name: 'minPrice', type: 'number', min: 0, max: 2147483647, step: 1, value: applied.minPrice, placeholder: 'Không giới hạn' });
   const maxPrice = el('input', { id: 'menu-maxPrice', name: 'maxPrice', type: 'number', min: 0, max: 2147483647, step: 1, value: applied.maxPrice, placeholder: 'Không giới hạn' });
@@ -70,10 +79,10 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     anchor.append(el('span', { className: 'mode-number', 'aria-hidden': 'true' }, number), label);
     return anchor;
   }));
-  const activeFilters = FILTER_KEYS.some((key) => applied[key]);
+  const activeFilters = FILTER_KEYS.some((key) => key === 'mode' ? applied.mode !== 'smart' : applied[key]);
   const form = el('form', { className: 'menu-search-form', onSubmit: (event) => { event.preventDefault(); submit(); } },
     el('div', { className: 'search' }, search, el('button', { type: 'submit' }, 'Tìm món'), ...(activeFilters ? [link(resetUrl, 'Xóa bộ lọc', 'button secondary')] : [])),
-    el('div', { className: 'menu-filters paginated-filters' }, field('menu-category', 'Danh mục', category),
+    el('div', { className: 'menu-filters paginated-filters' }, field('menu-mode', 'Cách tìm', searchMode), field('menu-category', 'Danh mục', category),
       field('menu-available', 'Trạng thái', available), field('menu-sort', 'Sắp xếp', sort),
       field('menu-minPrice', 'Giá từ (đ)', minPrice), field('menu-maxPrice', 'Đến (đ)', maxPrice)));
   ctx.body.replaceChildren(el('section', { className: 'hero' },
@@ -84,6 +93,8 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     el('section', { className: 'menu-section' },
       el('div', { className: 'section-heading' }, el('h2', {}, 'Thực đơn nhà Soucha'), el('span', {}, 'Một lựa chọn, một chút bình yên')),
       form, el('div', { className: 'pagination-toolbar' }, modeNav, field('menu-pageSize', 'Mỗi lượt', sizeSelect)),
+      ...(fulltext ? [el('p', { className: 'pagination-policy fulltext-hint' }, 'Full-text tìm theo các từ trong tên và mô tả, ưu tiên kết quả liên quan nhất. Nhập từ có dấu để khớp chính xác hơn.')] : []),
+      ...(smart ? [el('p', { className: 'pagination-policy fulltext-hint' }, 'Tìm theo từ trong tên và mô tả, không cần viết liền nhau. Chấp nhận lỗi gõ gần đúng trong tên món; ưu tiên khớp đúng rồi đến độ tương đồng.')] : []),
       el('p', { className: 'pagination-policy' }, view === 'pages'
         ? 'Chọn một trang để khám phá. Mở lại liên kết sẽ giữ đúng trang và bộ lọc của bạn.'
         : `${view === 'more' ? 'Bấm Tải thêm' : 'Cuộn gần cuối danh sách'} để khám phá tiếp. Mở lại liên kết sẽ tải từ đầu với cùng bộ lọc.`), result));
@@ -180,6 +191,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
         seen.add(record.id);
         const card = renderCard(record);
         card.dataset.dishId = record.id;
+        if (record.matchType === 'fuzzy') card.append(el('span', { className: 'search-match-note' }, 'Tên gần với từ khóa'));
         fragment.append(card);
       }
       grid.append(fragment);
@@ -210,6 +222,11 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
         }
       }
     }
+  }
+  if (fulltext && !applied.q.trim()) {
+    count.textContent = 'Nhập từ khóa để tìm toàn văn';
+    message.append(state('waiting', 'Bạn muốn tìm gì?', 'Nhập một hoặc nhiều từ trong tên hoặc mô tả món rồi bấm Tìm món.'));
+    return;
   }
   return loadNext();
 }

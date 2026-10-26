@@ -8,7 +8,7 @@
 .pagination-toolbar>.menu-filter-field{display:flex;align-items:center;gap:10px;white-space:nowrap}
 .pagination-toolbar select{width:110px;min-height:42px;font-size:12px}
 .menu-filter-field label{font-size:11px;color:var(--muted)}
-.paginated-filters.menu-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) repeat(2,minmax(115px,.85fr));gap:15px;margin:0}
+.paginated-filters.menu-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:0}
 .paginated-filters.menu-filters>.menu-filter-field{display:grid;gap:7px;min-width:0}
 .paginated-filters select,.paginated-filters input{width:100%;min-width:0;min-height:44px;font:inherit;font-size:12px;border:1px solid #d6dbce;border-radius:9px;padding:10px 12px;background:#fff;color:#43281a}
 .pagination-policy{margin:12px 0 25px;color:var(--muted);font-size:11px;line-height:1.8}
@@ -43,3 +43,5 @@
 @media(max-width:1000px){.paginated-filters.menu-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.pagination-modes a{padding:10px 13px;gap:6px}}
 @media(max-width:750px){.pagination-toolbar{align-items:stretch;flex-wrap:wrap;gap:13px}.pagination-modes{width:100%}.pagination-modes a{flex:1;padding:9px 7px;font-size:11px;gap:5px}.mode-number{font-size:8px}.pagination-toolbar>.menu-filter-field{margin-left:auto}.pagination-toolbar select{min-height:38px}.paginated-filters.menu-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.paginated-filters select,.paginated-filters input{font-size:11px;padding:9px}.paginated-filters>.menu-filter-field:nth-child(3){grid-column:1/-1}.menu-result-heading{align-items:flex-start;flex-direction:column;gap:10px}.menu-progress-wrap{width:100%;justify-content:space-between}.menu-progress{width:100px}.pagination-policy{font-size:10px}.page-link{min-width:34px;min-height:38px;padding:6px 8px;font-size:11px}.numbered-pagination{gap:5px}.pagination-end{max-width:280px}.menu-results .dish-card h3{min-height:88px}}
 @media(prefers-reduced-motion:reduce){.menu-results .dish-card{animation:none}.page-link:hover{transform:none}}
+@media(max-width:750px){.paginated-filters>.menu-filter-field:nth-child(3){grid-column:auto}}
+.search-match-note { display: inline-block; margin: 0 1.25rem 1rem; color: var(--muted, #65735f); font-size: .8rem; }

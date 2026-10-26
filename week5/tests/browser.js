@@ -50,7 +50,8 @@ async function main() {
       await list.locator(`[role="option"][data-value="${id}"]`).click();
     };
     await check('Menu, query q, empty state, detail, Back/Forward; navigation sends no documents', async () => {
-      await page.goto(origin + '/dishes');
+      // This legacy CRUD suite runs on SQLite; PostgreSQL smart search has its own browser suite.
+      await page.goto(origin + '/dishes?mode=basic');
       await page.locator('.dish-card').first().waitFor();
       assert.equal(await page.locator('.dish-card').count(), 8);
       await page.screenshot({ path: path.join(output, 'menu-desktop.png'), fullPage: true });
@@ -69,6 +70,8 @@ async function main() {
       await page.goForward();
       await page.locator('.dish-detail').waitFor();
       await page.locator('.back').click();
+      await page.locator('#menu-mode').selectOption('basic');
+      await ready();
       await page.getByRole('searchbox').fill('not-in-menu');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
       await page.locator('[data-state="empty"]').waitFor();

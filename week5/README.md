@@ -146,6 +146,8 @@ Trang thực đơn có thanh chọn **Số trang / Tải thêm / Cuộn liên t�
 
 ## API contract
 
+**Tìm kiếm mặc định Thông minh · gần đúng:** `mode=smart` kết hợp full-text trên tên + mô tả với so khớp từng từ gần đúng trong tên. `houjicha whisk`, `houjcha whsk` và `houjcha whsik` đều tìm được **Houjicha Cold Whisk**; khớp đúng xếp trước khớp gần đúng. Có thể chọn riêng Theo tên (nguyên cụm) hoặc Full-text (đúng từ). Cả ba kiểu phân trang giữ mode và từ khóa. [Cách sử dụng, điểm tương đồng và giới hạn](./docs/full-text-search.md). `npm run test:fulltext:browser` kiểm tra UI bằng PostgreSQL cục bộ. Sau khi đổi backend, dừng `npm run dev` cũ và chạy lại.
+
 Week5 có thêm **`GET /api/dishes/paged?page=1&pageSize=10`** dùng chung cho UI số trang, Load More và Infinite Scroll. API phân trang tại database, trả `{ ok: true, data: { items, total, page, pageSize }, error: null }`; tối đa 100 món/trang. Hỗ trợ `q`, `category`, `minPrice`, `maxPrice`, `available`, `sort`, áp dụng trước phân trang. Contract và hướng dẫn tích hợp: [docs/pagination-api.md](./docs/pagination-api.md). Chạy `npm run test:pagination:live` để xác nhận từng trang trên Supabase mà không sửa dữ liệu.
 
 Cho mỗi resource trong ba tên trên:

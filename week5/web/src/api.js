@@ -11,10 +11,10 @@ export class ApiError extends Error {
 }
 
 // Every page goes through this one boundary: network -> HTTP/JSON -> business.
-export async function request(resource, { id, path, q, category, sort, page, pageSize, minPrice, maxPrice, available, paginated = false, collection, method = 'GET', data, signal } = {}) {
+export async function request(resource, { id, path, q, mode, category, sort, page, pageSize, minPrice, maxPrice, available, paginated = false, collection, method = 'GET', data, signal } = {}) {
   const suffix = path ? '/' + path.split('/').map(encodeURIComponent).join('/') : '';
   const url = new URL(`${API_BASE_URL.replace(/\/$/, '')}/${resource}${id === undefined ? '' : '/' + encodeURIComponent(id)}${suffix}`);
-  for (const [key, value] of Object.entries({ q, category, sort, page, pageSize, minPrice, maxPrice, available })) {
+  for (const [key, value] of Object.entries({ q, mode, category, sort, page, pageSize, minPrice, maxPrice, available })) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
   }
   let response;

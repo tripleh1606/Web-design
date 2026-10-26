@@ -1,0 +1,27 @@
+meta {
+  name: PATCH /api/chefs empty body VALIDATION
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("empty patch VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["_form"]);
+  });
+}

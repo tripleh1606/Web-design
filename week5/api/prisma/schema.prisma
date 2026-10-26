@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/postgresql"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Dish {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  price       Int
+  category    String?
+  image       String?
+  available   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  ingredients DishIngredient[]
+  chefs       ChefDish[]
+
+  @@map("dishes")
+}
+
+model Chef {
+  id        Int      @id @default(autoincrement())
+  name      String
+  specialty String
+  createdAt DateTime @default(now())
+
+  dishes ChefDish[]
+
+  @@map("chefs")
+}
+
+model Ingredient {
+  id        Int      @id @default(autoincrement())
+  name      String
+  unit      String
+  stock     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  dishes DishIngredient[]
+
+  @@map("ingredients")
+}
+
+model DishIngredient {
+  dishId       Int
+  ingredientId Int
+  amount       Int
+
+  dish       Dish       @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@id([dishId, ingredientId])
+  @@map("dish_ingredients")
+}
+
+model ChefDish {
+  chefId Int
+  dishId Int
+
+  chef Chef @relation(fields: [chefId], references: [id], onDelete: Cascade)
+  dish Dish @relation(fields: [dishId], references: [id], onDelete: Cascade)
+
+  @@id([chefId, dishId])
+  @@map("chef_dishes")
+}

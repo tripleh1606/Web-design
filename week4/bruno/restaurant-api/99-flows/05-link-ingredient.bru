@@ -1,0 +1,33 @@
+meta {
+  name: Flow link ingredient to dish
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  req.setBody(JSON.stringify({
+    ingredientId: Number(bru.getEnvVar("testIngredientId")),
+    amount: 10
+  }));
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("link ingredient ok", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.have.property("ingredients");
+    const linked = body.data.ingredients.find((row) => row.ingredientId === Number(bru.getEnvVar("testIngredientId")));
+    expect(linked.amount).to.equal(10);
+  });
+}

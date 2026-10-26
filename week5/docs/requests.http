@@ -1,0 +1,160 @@
+@api = http://localhost:3001
+@origin = http://localhost:5173
+
+### Danh sách món (200, ok true, array)
+GET {{api}}/api/dishes
+Origin: {{origin}}
+
+### Tìm tên bằng query
+GET {{api}}/api/dishes?q=matcha
+
+### Không có bản ghi (200, NOT_FOUND)
+GET {{api}}/api/dishes/999999
+
+### Id không hợp lệ (200, NOT_FOUND, không query database)
+GET {{api}}/api/dishes/abc
+
+### Validation (200, VALIDATION_FAILED, fields name và price)
+POST {{api}}/api/dishes
+Content-Type: application/json
+Origin: {{origin}}
+
+{"name":"", "price":-1}
+
+### Chuỗi số không phải JSON number (200, VALIDATION_FAILED)
+POST {{api}}/api/dishes
+Content-Type: application/json
+
+{"name":"Matcha thử", "price":"30000"}
+
+### Tạo món: lấy data.id và thay giá trị dishId bên dưới
+POST {{api}}/api/dishes
+Content-Type: application/json
+Origin: {{origin}}
+
+{"name":"Món demo HTTP", "description":"Bài tuần 4", "price":35000, "category":"matcha", "available":true}
+
+@dishId = REPLACE_WITH_CREATED_ID
+
+### Đọc theo id
+GET {{api}}/api/dishes/{{dishId}}
+
+### PATCH từng phần, giữ nguyên các trường còn lại
+PATCH {{api}}/api/dishes/{{dishId}}
+Content-Type: application/json
+Origin: {{origin}}
+
+{"price":39000}
+
+### Preflight PATCH (204)
+OPTIONS {{api}}/api/dishes/{{dishId}}
+Origin: {{origin}}
+Access-Control-Request-Method: PATCH
+Access-Control-Request-Headers: content-type
+
+### Preflight DELETE (204)
+OPTIONS {{api}}/api/dishes/{{dishId}}
+Origin: {{origin}}
+Access-Control-Request-Method: DELETE
+
+### Xóa: chỉ chạy với id bản ghi demo vừa tạo; thành công data null
+DELETE {{api}}/api/dishes/{{dishId}}
+Origin: {{origin}}
+
+### Đầu bếp: danh sách
+GET {{api}}/api/chefs
+
+### Thêm đầu bếp
+POST {{api}}/api/chefs
+Content-Type: application/json
+
+{"name":"Đầu bếp demo", "specialty":"Pha trà"}
+
+@chefId = REPLACE_WITH_CREATED_ID
+
+### Chi tiết đầu bếp
+GET {{api}}/api/chefs/{{chefId}}
+
+### Sửa đầu bếp
+PATCH {{api}}/api/chefs/{{chefId}}
+Content-Type: application/json
+
+{"specialty":"Matcha và Houjicha"}
+
+### Xóa đầu bếp demo
+DELETE {{api}}/api/chefs/{{chefId}}
+
+### Nguyên liệu
+GET {{api}}/api/ingredients
+
+### Thêm nguyên liệu
+POST {{api}}/api/ingredients
+Content-Type: application/json
+
+{"name":"Nguyên liệu demo", "unit":"g", "stock":500}
+
+@ingredientId = REPLACE_WITH_CREATED_ID
+
+### Chi tiết nguyên liệu
+GET {{api}}/api/ingredients/{{ingredientId}}
+
+### Sửa nguyên liệu
+PATCH {{api}}/api/ingredients/{{ingredientId}}
+Content-Type: application/json
+
+{"stock":450}
+
+### Xóa nguyên liệu demo
+DELETE {{api}}/api/ingredients/{{ingredientId}}
+
+### Sai URL (404, không có ok)
+GET {{api}}/api/bok
+
+### JSON hỏng (400, không có ok)
+POST {{api}}/api/dishes
+Content-Type: application/json
+
+{bad json
+
+### Kiểm tra 500: npm test chủ động DROP bảng trong DB test riêng, không sửa DB demo.
+### Kiểm tra API tắt: dừng terminal API, giữ terminal web, mở /dishes để thấy lỗi kỹ thuật.
+
+### Tạo món kèm nguyên liệu mới trực tiếp (món + kho + công thức lưu cùng transaction)
+POST {{api}}/api/dishes
+Content-Type: application/json
+Origin: {{origin}}
+
+{"name":"Món với nguyên liệu mới", "price":39000, "ingredients":[{"ingredient":{"name":"Sữa tạo cùng món", "unit":"ml", "stock":1000}, "amount":200}]}
+
+### GET món trả thêm ingredients, chefs, servings
+GET {{api}}/api/dishes/{{dishId}}
+
+### Danh sách nguyên liệu trong công thức
+GET {{api}}/api/dishes/{{dishId}}/ingredients
+
+### Gắn nguyên liệu có sẵn vào món
+POST {{api}}/api/dishes/{{dishId}}/ingredients
+Content-Type: application/json
+
+{"ingredientId":{{ingredientId}}, "amount":10}
+
+### Sửa lượng mỗi phần
+PATCH {{api}}/api/dishes/{{dishId}}/ingredients/{{ingredientId}}
+Content-Type: application/json
+
+{"amount":20}
+
+### Chỉ gỡ liên kết, không xóa nguyên liệu trong kho
+DELETE {{api}}/api/dishes/{{dishId}}/ingredients/{{ingredientId}}
+
+### Gán món cho đầu bếp
+POST {{api}}/api/chefs/{{chefId}}/dishes
+Content-Type: application/json
+
+{"dishId":{{dishId}}}
+
+### Danh sách món được gán
+GET {{api}}/api/chefs/{{chefId}}/dishes
+
+### Chỉ gỡ liên kết, không xóa món hoặc đầu bếp
+DELETE {{api}}/api/chefs/{{chefId}}/dishes/{{dishId}}

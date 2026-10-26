@@ -1,0 +1,28 @@
+meta {
+  name: POST /api/ingredients missing required
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("empty body VALIDATION_FAILED", function() {
+    // stock có default 0; bắt buộc chỉ name + unit
+    expectValidation(res, expect, ["name", "unit"]);
+  });
+}

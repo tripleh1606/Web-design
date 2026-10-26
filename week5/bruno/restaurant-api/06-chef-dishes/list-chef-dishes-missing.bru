@@ -1,0 +1,22 @@
+meta {
+  name: GET chef dishes NOT_FOUND
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/chefs/999999/dishes
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing chef NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

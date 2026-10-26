@@ -1,0 +1,32 @@
+meta {
+  name: POST /api/dishes bad image path
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Bruno Bad Image",
+    "price": 1000,
+    "available": true,
+    "image": "/wrong.png"
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("bad image VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["image"]);
+  });
+}

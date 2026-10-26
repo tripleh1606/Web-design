@@ -1,0 +1,36 @@
+{
+  "name": "soucha-restaurant",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "start:be": "node server.js",
+    "start:fe": "node web/server.js",
+    "dev": "node --watch server.js",
+    "dev:be": "node --watch server.js",
+    "dev:fe": "node web/server.js",
+    "test": "node --test tests/*.test.js",
+    "test:live": "node tests/live-smoke.js",
+    "test:bruno": "cd bruno/restaurant-api && bru run -r --env local",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:search-setup": "prisma db execute --file prisma/search-setup.sql --schema prisma/schema.prisma",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "6.12.0",
+    "axios": "^1.20.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@usebruno/cli": "^2.14.1",
+    "prisma": "6.12.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

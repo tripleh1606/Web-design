@@ -1,0 +1,23 @@
+meta {
+  name: GET /api/ingredients/:id ok
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/ingredients/{{seedIngredientId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("seed ingredient found", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.id).to.equal(Number(bru.getEnvVar("seedIngredientId")));
+  });
+}

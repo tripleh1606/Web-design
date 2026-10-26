@@ -1,0 +1,22 @@
+meta {
+  name: DELETE recipe link NOT_FOUND
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/ingredients/999999
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing link DELETE NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

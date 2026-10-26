@@ -1,0 +1,25 @@
+meta {
+  name: GET /api/chefs/:id/dishes ok
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}/dishes
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("chef dishes shape", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.have.property("chef");
+    expect(body.data).to.have.property("assigned");
+    expect(body.data).to.have.property("availableDishes");
+  });
+}

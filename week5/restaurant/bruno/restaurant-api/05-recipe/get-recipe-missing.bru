@@ -1,0 +1,22 @@
+meta {
+  name: GET recipe dish NOT_FOUND
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/dishes/999999/recipe
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing dish recipe NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

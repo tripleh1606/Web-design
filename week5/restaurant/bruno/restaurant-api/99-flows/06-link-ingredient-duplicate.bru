@@ -1,0 +1,31 @@
+meta {
+  name: Flow duplicate recipe link VALIDATION
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  req.setBody(JSON.stringify({
+    ingredientId: Number(bru.getEnvVar("testIngredientId")),
+    amount: 10
+  }));
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("duplicate recipe link VALIDATION_FAILED", function() {
+    const body = expectValidation(res, expect, ["ingredientId"]);
+    expect(body.error.fields.ingredientId).to.match(/đã có/i);
+  });
+}

@@ -220,7 +220,7 @@ async function main() {
       assert.match(await page.locator('[data-state="empty"]').innerText(), /Trang này chưa có món/);
       await page.getByRole('link', { name: 'Về trang đầu' }).click();
       await count(12);
-      await page.locator('#menu-mode').selectOption('basic');
+      await page.goto(origin + '/dishes?mode=basic&pageSize=12');
       await count(12);
       await page.getByRole('searchbox').fill('no-match-here');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
@@ -271,6 +271,60 @@ async function main() {
       assert.equal(await button.evaluate((node) => node.isConnected), true);
       await page.unroute('**/api/dishes/paged?**');
       console.log('Prefetched append latency:', Math.round(elapsed), 'ms');
+    });
+    await check('Ellipsis opens a page input, validates bounds, preserves filters and supports keyboard/mobile without document navigation', async () => {
+      await app.prisma.dish.createMany({ data: Array.from({ length: 120 }, (_, index) => ({
+        name: `Món nhảy trang ${index}`, price: index * 1000, category: 'coffee', available: true
+      })) });
+      const targetUrl = origin + '/dishes?mode=basic&view=pages&page=5&pageSize=12&q=nhảy+trang&category=coffee&sort=price-desc';
+      await page.goto(targetUrl);
+      await count(12);
+      assert.equal(await page.locator('#menu-mode').count(), 0);
+      const documentsBefore = documents.length;
+      assert.equal(await page.locator('button.page-ellipsis').count(), 2);
+      const dialog = page.getByRole('dialog', { name: 'Đến trang', exact: true });
+      const input = page.getByRole('spinbutton', { name: 'Số trang', exact: true });
+      await page.locator('button.page-ellipsis').first().click();
+      await dialog.waitFor();
+      assert.equal(await input.getAttribute('max'), '10');
+      assert.equal(await input.evaluate((node) => document.activeElement === node), true);
+      await input.fill('8');
+      await input.press('Enter');
+      await page.waitForURL((url) => url.searchParams.get('page') === '8');
+      await count(12);
+      assert.match(await page.locator('.dish-card').first().innerText(), /Món nhảy trang 35/);
+      const url = new URL(page.url());
+      for (const [key, value] of Object.entries({ q: 'nhảy trang', category: 'coffee', sort: 'price-desc', pageSize: '12', view: 'pages' })) {
+        assert.equal(url.searchParams.get(key), value);
+      }
+      assert.equal(documents.length, documentsBefore);
+      await page.locator('button.page-ellipsis').first().click();
+      await dialog.waitFor();
+      const requestsBefore = network.length;
+      for (const value of ['0', '11', '1.5', '']) {
+        await input.fill(value);
+        await dialog.getByRole('button', { name: 'Đi tới', exact: true }).click();
+        assert.equal(await dialog.locator('[role=alert]').isVisible(), true);
+        assert.equal(new URL(page.url()).searchParams.get('page'), '8');
+        assert.equal(network.length, requestsBefore);
+      }
+      await input.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      await page.waitForFunction(() => !document.querySelector('.page-ellipsis[aria-expanded="true"]'));
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.locator('button.page-ellipsis').first().focus();
+      await page.keyboard.press('Enter');
+      await dialog.waitFor();
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await page.screenshot({ path: path.join(output, 'pagination-jump-mobile.png'), fullPage: false });
+      await dialog.getByRole('button', { name: 'Hủy', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      await page.locator('button.page-ellipsis').first().click();
+      await input.fill('10');
+      await dialog.getByRole('button', { name: 'Đi tới', exact: true }).click();
+      await page.waitForURL((url) => url.searchParams.get('page') === '10');
+      await count(12);
+      assert.equal(documents.length, documentsBefore);
     });
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(output, 'pagination-browser.json'), JSON.stringify({ results, pageErrors: errors }, null, 2));

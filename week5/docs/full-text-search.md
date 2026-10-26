@@ -2,7 +2,7 @@
 
 ## Đã áp dụng ở đâu?
 
-Database có cột `fts`, GIN index và trigger tự cập nhật từ tên (weight A) + mô tả (weight B). API `/api/dishes/paged` hỗ trợ full-text và tìm gần đúng. Giao diện mặc định **Thông minh · gần đúng**, gửi `mode=smart`; hai chế độ Theo tên và Full-text vẫn có thể chọn riêng. API không gửi mode vẫn dùng `basic` để giữ tương thích.
+Database có cột `fts`, GIN index và trigger tự cập nhật từ tên (weight A) + mô tả (weight B). API `/api/dishes/paged` hỗ trợ full-text và tìm gần đúng. Giao diện tự dùng `mode=smart`, không có ô chọn Cách tìm. Các mode basic/fulltext vẫn dùng được qua API và liên kết cũ để giữ tương thích; API không gửi mode vẫn dùng basic.
 
 ```http
 GET /api/dishes/paged?mode=fulltext&q=matcha%20vani&page=1&pageSize=10
@@ -54,11 +54,11 @@ Smart thực hiện nhận diện từ, lọc, tính điểm, đếm và phân t
 
 ## Dùng trên UI
 
-1. Mở `/dishes`, giữ **Thông minh · gần đúng** để có cả full-text và chịu lỗi gõ.
+1. Mở `/dishes`; tìm kiếm thông minh được áp dụng tự động, không cần chọn thuật toán.
 2. Nhập `houjicha whisk`, `houjcha whsk` hoặc `houjcha whsik` rồi bấm **Tìm món**. Smart chưa có từ khóa vẫn hiển thị danh sách bình thường. Chế độ Full-text riêng chờ nhập nếu chưa có từ khóa.
 3. Dùng Số trang, Tải thêm hoặc Cuộn liên tục như cũ. URL và request giữ `mode`, q và mọi điều kiện.
 
-Full-text cố định thứ tự **Liên quan nhất**; ô sort bị khóa để không hiển thị một lựa chọn giá/tên không được áp dụng. Smart có từ khóa mặc định **Liên quan nhất**, cho phép chọn thứ tự khác; không có từ khóa mặc định id tăng dần. Đổi chế độ/từ khóa/filter bắt đầu lại từ trang 1 và hủy bộ đệm cũ. Xóa bộ lọc khôi phục danh sách mặc định, chế độ Smart. Nếu URL cũ có `mode=basic`, đổi Cách tìm sang Thông minh hoặc mở lại `/dishes`.
+Ô Sắp xếp chỉ có Mới nhất, Tên A → Z, Tên Z → A, Giá tăng dần, Giá giảm dần. Không có hai lựa chọn Mặc định/Liên quan nhất; “Chọn thứ tự” là placeholder bị ẩn và vô hiệu hóa trong danh sách lựa chọn. Khi chưa chọn, Smart tự ưu tiên độ phù hợp nếu có từ khóa; danh sách không có từ khóa giữ id tăng dần. Không hiển thị một thứ tự cụ thể khác với cách API đang sắp xếp. Xóa bộ lọc khôi phục cách tự sắp xếp. Đổi từ khóa/filter/sort bắt đầu lại từ trang 1 và hủy bộ đệm cũ. Với liên kết cũ có mode=basic/fulltext, mở `/dishes` để trở lại tìm kiếm thông minh tự động; các lựa chọn API phục vụ bài học vẫn được giữ.
 
 ## Giới hạn được công bố
 

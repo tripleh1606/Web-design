@@ -6,11 +6,12 @@
 .pagination-modes a.active{background:#fff;color:var(--green);box-shadow:0 2px 8px #243a1710;font-weight:600}
 .mode-number{font-size:9px;opacity:.6;letter-spacing:.05em}
 .pagination-toolbar>.menu-filter-field{display:flex;align-items:center;gap:10px;white-space:nowrap}
-.pagination-toolbar select{width:110px;min-height:42px;font-size:12px}
+.pagination-toolbar select{width:110px;min-height:44px;font-size:12px}
 .menu-filter-field label{font-size:11px;color:var(--muted)}
-.paginated-filters.menu-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:0}
+.paginated-filters.menu-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) repeat(2,minmax(115px,.85fr));gap:15px;margin:0}
 .paginated-filters.menu-filters>.menu-filter-field{display:grid;gap:7px;min-width:0}
-.paginated-filters select,.paginated-filters input{width:100%;min-width:0;min-height:44px;font:inherit;font-size:12px;border:1px solid #d6dbce;border-radius:9px;padding:10px 12px;background:#fff;color:#43281a}
+.paginated-filters select,.paginated-filters input{width:100%;min-width:0;min-height:44px;font:inherit;font-size:12px;border:1px solid #d6dbce;border-radius:9px;padding:var(--control-inset-block) var(--control-inset);background-color:#fff;color:#43281a}
+.paginated-filters select{padding-right:var(--control-indicator-space);line-height:1.6}
 .pagination-policy{margin:12px 0 25px;color:var(--muted);font-size:11px;line-height:1.8}
 .menu-result-heading{display:flex;justify-content:space-between;align-items:center;gap:25px;margin:0 0 22px;padding:15px 0;border-block:1px solid var(--line)}
 .menu-result-heading .result-count{margin:0;font-size:12px;font-weight:500;color:var(--green)}
@@ -32,7 +33,20 @@
 .page-link:hover{background:#e7eedb;transform:translateY(-1px)}
 .page-link[aria-current=page]{background:var(--green);color:#fff;border-color:var(--green);font-weight:600}
 .page-link.disabled{opacity:.35;cursor:default;pointer-events:none}
-.page-ellipsis{padding:6px;font-size:13px;color:var(--muted)}
+.page-ellipsis{padding:6px;font-size:15px;color:var(--muted);cursor:pointer;font-family:inherit}
+.page-jump-dialog{width:min(360px,calc(100% - 32px));max-width:none;margin:auto;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fffdf8;color:#43281a;box-shadow:0 22px 70px #23351d30}
+.page-jump-dialog::backdrop{background:#17261a55}
+.page-jump-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.page-jump-heading h3{margin:0;font-size:21px;font-weight:500}
+.page-jump-close{padding:4px 8px;min-height:36px;background:transparent;color:var(--muted);font-size:24px;border:0;border-radius:8px}
+.page-jump-close:hover{background:#edf0df;color:var(--green)}
+.page-jump-hint{margin:12px 0 20px;color:var(--muted);font-size:13px}
+.page-jump-dialog label{display:block;margin:0 0 8px;font-size:13px}
+.page-jump-dialog input{font:inherit}
+.page-jump-dialog input[aria-invalid=true]{border-color:#ac513c}
+.page-jump-error{margin:10px 0 0;color:#9e3f2d;font-size:12px}
+.page-jump-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+.page-jump-actions button{min-height:42px;font:inherit;font-size:13px}
 .load-more-button{min-width:230px;border-radius:30px;padding:14px 25px;font-size:12px}
 .load-more-button:disabled{cursor:default;opacity:.6}
 .pagination-end{margin:0;color:var(--muted);text-align:center;font-size:11px}
@@ -41,7 +55,7 @@
 .pagination-modes a:focus-visible,.page-link:focus-visible,.load-more-button:focus-visible{outline:3px solid #9fb67c;outline-offset:3px}
 @keyframes menu-arrive{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:1000px){.paginated-filters.menu-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.pagination-modes a{padding:10px 13px;gap:6px}}
-@media(max-width:750px){.pagination-toolbar{align-items:stretch;flex-wrap:wrap;gap:13px}.pagination-modes{width:100%}.pagination-modes a{flex:1;padding:9px 7px;font-size:11px;gap:5px}.mode-number{font-size:8px}.pagination-toolbar>.menu-filter-field{margin-left:auto}.pagination-toolbar select{min-height:38px}.paginated-filters.menu-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.paginated-filters select,.paginated-filters input{font-size:11px;padding:9px}.paginated-filters>.menu-filter-field:nth-child(3){grid-column:1/-1}.menu-result-heading{align-items:flex-start;flex-direction:column;gap:10px}.menu-progress-wrap{width:100%;justify-content:space-between}.menu-progress{width:100px}.pagination-policy{font-size:10px}.page-link{min-width:34px;min-height:38px;padding:6px 8px;font-size:11px}.numbered-pagination{gap:5px}.pagination-end{max-width:280px}.menu-results .dish-card h3{min-height:88px}}
+@media(max-width:750px){.pagination-toolbar{align-items:stretch;flex-wrap:wrap;gap:13px}.pagination-modes{width:100%}.pagination-modes a{flex:1;padding:9px 7px;font-size:11px;gap:5px}.mode-number{font-size:8px}.pagination-toolbar>.menu-filter-field{margin-left:auto}.pagination-toolbar select{min-height:44px}.paginated-filters.menu-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.paginated-filters select,.paginated-filters input{font-size:11px;padding:var(--control-inset-block) var(--control-inset)}.paginated-filters select{padding-right:var(--control-indicator-space)}.paginated-filters>.menu-filter-field:nth-child(3){grid-column:1/-1}.menu-result-heading{align-items:flex-start;flex-direction:column;gap:10px}.menu-progress-wrap{width:100%;justify-content:space-between}.menu-progress{width:100px}.pagination-policy{font-size:10px}.page-link{min-width:34px;min-height:38px;padding:6px 8px;font-size:11px}.numbered-pagination{gap:5px}.pagination-end{max-width:280px}.menu-results .dish-card h3{min-height:88px}}
 @media(prefers-reduced-motion:reduce){.menu-results .dish-card{animation:none}.page-link:hover{transform:none}}
-@media(max-width:750px){.paginated-filters>.menu-filter-field:nth-child(3){grid-column:auto}}
+@media(max-width:750px){.paginated-filters>.menu-filter-field:nth-child(3){grid-column:auto}.paginated-filters>.menu-filter-field:first-child{grid-column:1/-1}}
 .search-match-note { display: inline-block; margin: 0 1.25rem 1rem; color: var(--muted, #65735f); font-size: .8rem; }

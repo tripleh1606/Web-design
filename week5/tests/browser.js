@@ -70,9 +70,8 @@ async function main() {
       await page.goForward();
       await page.locator('.dish-detail').waitFor();
       await page.locator('.back').click();
-      await page.locator('#menu-mode').selectOption('basic');
-      await ready();
-      await page.getByRole('searchbox').fill('not-in-menu');
+      // Empty-list coverage on SQLite; smart text search is covered on PostgreSQL.
+      await page.locator('#menu-maxPrice').fill('0');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
       await page.locator('[data-state="empty"]').waitFor();
       assert.equal(documents.length, count);

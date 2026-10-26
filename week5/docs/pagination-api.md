@@ -50,6 +50,8 @@ Chuỗi trắng ở điều kiện tùy chọn được bỏ qua. `page=`/`pageS
 | Load More | Bắt đầu page 1; mỗi lần bấm gọi trang kế tiếp rồi nối `data.items` |
 | Infinite Scroll | Dùng cùng thao tác tải/nối của Load More; sentinel cuộn kích hoạt request |
 
+Ở Số trang, dấu **…** là nút mở hộp thoại **Đến trang**. Người dùng nhập số rồi bấm **Đi tới** hoặc Enter; chỉ nhận số nguyên từ 1 đến tổng số trang. Dữ liệu không hợp lệ hiện lỗi tại ô nhập và không gửi request. Hủy, nút đóng hoặc Escape đóng hộp thoại. Chuyển trang giữ từ khóa, bộ lọc, sort và pageSize, điều hướng bằng SPA; có thể dùng bàn phím và mobile.
+
 Backend không cần một route riêng cho từng nút hay sự kiện cuộn. Frontend chặn request trùng bằng trạng thái pending, chỉ tăng trang sau thành công và giữ trang khi lỗi để thử lại. Đổi điều kiện hoặc sort thì frontend xóa danh sách tích lũy, hủy/bỏ response cũ và bắt đầu page 1. Infinite Scroll có sentinel sau danh sách, tự kiểm tra lại khi viewport chưa đầy và disconnect khi rời trang; vẫn có nút Tải thêm cho thao tác bàn phím.
 
 URL màn hình giữ `view=pages|more|infinite`, page, pageSize và toàn bộ điều kiện. Số trang khôi phục trực tiếp trang từ URL. Load More/Infinite Scroll luôn tải từ page 1 khi Reload/Back hoặc mở lại link, giữ bộ điều kiện và pageSize; chính sách này được ghi ngay trên UI. API chỉ trả đúng trang được yêu cầu.

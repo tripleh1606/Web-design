@@ -1,92 +1,204 @@
-# Đối chiếu restaurant tuần 3 và bản REST API + SPA tuần 4
+# Đối chiếu restaurant tuần 3 với Soucha tuần 5
 
-Cập nhật ngày 19/10/2026 theo yêu cầu: thêm nguyên liệu trực tiếp cho món, mang chức năng và SQL của restaurant tuần 3 sang tuần 4, sửa font tiếng Việt.
+Cập nhật: **26/10/2026**. Baseline là **week3/restaurant**, ứng dụng Express + EJS + Prisma; không phải app Next.js ở week3/soucha. Bản đang báo cáo là **week5/api + week5/web**, được khởi động bằng npm run dev tại week5.
 
-## 1. Đã sửa
+Chi tiết phần mở rộng riêng so với tuần 4: [BAO-CAO-DOI-CHIEU.md](./BAO-CAO-DOI-CHIEU.md).
 
-- Form **Thêm món ăn** và **Sửa món ăn** có phần **Nguyên liệu cho món**. Mỗi dòng chọn từ kho hoặc tạo nguyên liệu mới ngay trong form, nhập lượng dùng cho một phần, bỏ dòng chưa lưu nếu cần.
-- Ô chọn nguyên liệu từ kho và ô chọn món gán cho đầu bếp có dropdown tìm kiếm khi gõ: hỗ trợ không dấu/hoa thường, chuột/bàn phím, thông báo không có kết quả; khi đổi từ khóa sẽ bỏ ID cũ, tránh ghi nhầm lựa chọn trước đó.
-- Tạo món, tạo nguyên liệu mới và gắn công thức trong **một transaction**. Nếu bất kỳ dòng nào không hợp lệ, không tạo món hoặc nguyên liệu dang dở. Lỗi được hiển thị cạnh đúng input, giữ giá trị đang nhập.
-- Trang **Công thức** có tồn kho, lượng mỗi phần, số phần làm được, thêm nguyên liệu, sửa lượng và gỡ sau xác nhận. Gỡ chỉ xóa liên kết, giữ nguyên liệu trong kho.
-- Trang chi tiết **Đầu bếp** có danh sách món, form gán món và trang xác nhận gỡ món; giữ nguyên cả món và đầu bếp khi gỡ.
-- Mang lại lọc danh mục và sắp xếp giá từ menu tuần 3; q/category/sort nằm trong URL.
-- Khôi phục **PostgreSQL/Supabase** trong schema chính; giữ schema/client SQLite riêng cho local/test. Runtime chọn theo DATABASE_URL, không cần sửa provider thủ công.
-- Xuất SQL cấu trúc và dữ liệu mẫu từ source tuần 3, kiểm thử trên PostgreSQL cục bộ.
-- Lưu Kodchasan trực tiếp trong dự án, dùng một family có đủ dấu tiếng Việt cho tiêu đề/nội dung/form; bỏ việc trộn Georgia/Times với sans-serif và không cần tải Google Fonts khi mở trang.
+## 1. Lộ trình kiến trúc tuần 3 → tuần 4 → tuần 5
 
-## 2. Bảng đối chiếu với source tuần 3
+| Thành phần | Tuần 3 | Tuần 4 | Tuần 5 |
+| --- | --- | --- | --- |
+| Backend | Express + Prisma, trả HTML EJS | Express + Prisma, REST JSON | Kế thừa API, thêm truy vấn tìm/lọc/phân trang |
+| Frontend | Template EJS, form HTML | SPA JavaScript ES modules | Giữ SPA, bổ sung menu phân trang và tìm tự động |
+| Rendering | SSR tại server | Browser dựng DOM từ JSON | Tiếp tục CSR/SPA |
+| Tìm món | Prisma contains trên name, kết hợp category | API lấy mảng rồi lọc tên trong Node.js | SQL full-text, fuzzy và nhận diện từ khóa trên toàn DB |
+| Sort | Id hoặc giá tại DB | Giá tại DB, trả toàn mảng | Thêm tên, mới nhất, rank; sort trước LIMIT/OFFSET |
+| Đọc danh sách | HTML chứa toàn bộ kết quả | JSON mảng, SPA render danh sách | JSON một trang + total/page/pageSize |
+| Phân trang | Chưa có ba UI mới | Chưa có ba UI mới | Số trang, Tải thêm, Cuộn liên tục |
+| Lỗi bản ghi thiếu | HTML lỗi HTTP 404 | JSON HTTP 200 + NOT_FOUND | Giữ contract tuần 4 |
+| Validation | Form SSR HTTP 400, kèm giá trị/lỗi | JSON HTTP 200 + VALIDATION_FAILED/fields | Giữ contract; thêm validation query phân trang/tìm |
+| Ghi dữ liệu | Form POST, method-override, redirect 303 | fetch POST/PATCH/DELETE, điều hướng client | Giữ cơ chế tuần 4 |
+| Origin | UI và backend cùng origin | SPA 5173, API 3001, có CORS | Giữ hai origin và cấu hình CORS |
 
-| Có trong `week3/restaurant` | Vị trí/luồng ở tuần 4 | Đối chiếu |
+~~~text
+Tuần 3:
+Browser → request → Express → Prisma → PostgreSQL
+        ← HTML do EJS render tại server ←
+
+Tuần 5:
+Browser tải HTML/JS ban đầu
+→ JavaScript gọi API bằng fetch
+→ Express → Prisma/SQL → PostgreSQL
+→ JSON → JavaScript cập nhật DOM
+~~~
+
+Backend vẫn kiểm tra và lưu dữ liệu. CSR chỉ chuyển trách nhiệm dựng giao diện sang browser; browser không kết nối PostgreSQL trực tiếp. Mở link sâu hoặc Reload vẫn tải document ban đầu; điều hướng nội bộ/thao tác SPA mới tránh việc tải lại toàn trang.
+
+## 2. Database: kế thừa gì, bổ sung gì?
+
+### 2.1. Mô hình nghiệp vụ không thay đổi
+
+| Thành phần tuần 3 | Trạng thái tại tuần 5 |
+| --- | --- |
+| Dish: id, name, description, price, category, image, available, createdAt | Giữ các trường; thêm fts và các index tìm kiếm |
+| Chef: id, name, specialty, createdAt | Giữ model; có script nhập thêm tên |
+| Ingredient: id, name, unit, stock, createdAt | Giữ model và tồn kho |
+| DishIngredient: dishId + ingredientId, amount | Giữ khóa kép, khóa ngoại và cascade |
+| ChefDish: chefId + dishId | Giữ khóa kép và quan hệ nhiều–nhiều |
+| Seed món, nguyên liệu và quan hệ ban đầu | Kế thừa dữ liệu nguồn; seed tránh thêm trùng/reset tồn kho |
+
+Prisma schema PostgreSQL của tuần 5 vẫn khớp mô hình nghiệp vụ tuần 3 sau khi loại khác biệt đường dẫn generate client và phần mở rộng tìm kiếm. Điều này được kiểm tra tại [database.test.js](./tests/database.test.js).
+
+Không bổ sung bảng Order/OrderItem hoặc chuyển 1.200 biến thể đồ uống thành đơn hàng. Dữ liệu mở rộng là bản ghi Dish; 28 tên bổ sung là bản ghi Chef có chuyên môn Pha chế.
+
+### 2.2. Phần mở rộng chỉ có ở tuần 5
+
+- **fts: tsvector**, lưu document tên trọng số A và mô tả trọng số B, dùng simple và coalesce cho NULL.
+- **GIN fts**, **GIN name gin_trgm_ops**, **index category/available/price**.
+- Extension **pg_trgm**, **unaccent**, **fuzzystrmatch**.
+- Hàm chuẩn hóa tên **soucha_normalize_search** và chấm từ **soucha_word_score**.
+- Trigger **dishes_fts_refresh**, gọi **soucha_refresh_dish_fts**, cập nhật document khi dữ liệu thay đổi.
+
+fts là **cột thường + trigger**, không phải generated column. Prisma dùng Unsupported("tsvector")? để mô tả kiểu PostgreSQL; truy vấn tìm kiếm được viết bằng SQL bind tham số qua Prisma.
+
+Nguồn: [schema tuần 3](../week3/restaurant/prisma/schema.prisma), [schema tuần 5](./api/prisma/schema.prisma), [SQL setup tuần 5](./api/prisma/search-setup.sql).
+
+### 2.3. Database dùng chung
+
+Week4 và week5 hiện trỏ cùng đích Supabase theo kiểm tra cấu hình. Dùng chung database không làm code tuần 3/4 tự có API, index metadata hay UI mới. Bản ghi mới có thể được các phiên bản cùng DB nhìn thấy, còn cách tìm và hiển thị do source từng phiên bản quyết định.
+
+Khi thiết lập database mới, dùng [001-schema.sql](./api/sql/001-schema.sql) và [002-seed.sql](./api/sql/002-seed.sql) theo hướng dẫn. Với DB đang có dữ liệu, dùng schema và search setup của tuần 5 để giữ phần mở rộng. Không cần chép dữ liệu thật qua SQLite để chạy PostgreSQL.
+
+## 3. Khác biệt trong cách tìm kiếm
+
+### 3.1. Tuần 3: tìm chuỗi trong tên
+
+Route GET /dishes dựng điều kiện Prisma:
+
+~~~js
+{
+  name: { contains: q, mode: "insensitive" }
+}
+~~~
+
+Kết hợp category và sắp xếp giá/id, sau đó render EJS. Quy tắc này không tự hiểu từ sai chính tả hoặc các từ bị ngăn bởi một từ khác trong tên.
+
+### 3.2. Tuần 5: tìm toàn tập, trả từng trang
+
+Endpoint **GET /api/dishes/paged** hỗ trợ:
+
+| Mode hiện có | Nội dung |
+| --- | --- |
+| basic | Tìm nguyên chuỗi con trong tên, tương thích hành vi cơ bản |
+| fulltext | plainto_tsquery/simple trên document tên + mô tả; rank giảm dần, id ASC khi bằng điểm |
+| smart | Kết hợp full-text, bỏ dấu, Levenshtein, trigram, nhận diện từ và gợi ý ký tự |
+
+**Full-text không đồng nghĩa chịu mọi lỗi chính tả.** Trường hợp houjicha whisk khớp Houjicha Cold Whisk do các từ không cần liền nhau. Các trường hợp houcha hoặc báh bì cần thêm fuzzy/chuẩn hóa.
+
+Smart được triển khai theo các bước:
+
+1. Chuẩn hóa NFC, chuyển chữ thường, bỏ dấu khi so tên.
+2. Tạo bộ từ vựng tên món toàn cục, không phụ thuộc trang hoặc bộ lọc hiện tại.
+3. Nhận diện một token chưa tồn tại dài 5–12 ký tự thành ứng viên hoán vị đầy đủ duy nhất, nếu có.
+4. Chạy full-text với từ gốc/từ nhận diện và tính fuzzy từng từ, không bỏ qua từ không khớp.
+5. Kết hợp category, giá, available; xếp hạng; đếm và lấy trang trong cùng một câu SQL.
+
+Các giới hạn fuzzy: từ 2–4 ký tự cho phép 1 thao tác Levenshtein, từ dài hơn cho phép 2; từ hai ký tự cần ngữ cảnh query nhiều từ; trigram có ngưỡng 0.3. Xáo trộn ký tự một phần như kswh chỉ được dùng làm gợi ý yếu, có nhãn riêng, khi không có kết quả tốt hơn. Đây là các quy tắc điểm, không phải xác suất AI.
+
+### 3.3. Ví dụ sửa lỗi thiếu kết quả
+
+Trước khi thêm bước nhận diện, **chatma** có điểm tốt với các từ như “chất/chai”, làm nhánh Matcha bị loại. Hiện tại:
+
+~~~text
+q gốc: chatma
+→ nhận diện matcha
+→ tìm toàn bộ món theo matcha
+→ tổng kết quả và thứ tự đầy đủ
+→ trả trang người dùng yêu cầu
+~~~
+
+API trả correctedQuery để UI thông báo “Hiển thị kết quả cho matcha”, không âm thầm thay nội dung trong ô tìm. Kiểm tra chỉ đọc ngày 26/10/2026 cho thấy chatma và matcha cùng **667 kết quả**, cùng thứ tự/ID qua mọi trang, không lặp; con số có thể thay đổi khi dữ liệu thay đổi.
+
+Hai món **Bánh bò/Cơm bò** chỉ được tạo trong database test riêng để kiểm tra báh bì chọn Bánh bò; không được nhập vào thực đơn Supabase khi kiểm thử.
+
+## 4. Backend và frontend đã chuyển những gì?
+
+| Chức năng | Tuần 3 | Tuần 5 hiện tại |
 | --- | --- | --- |
-| Prisma PostgreSQL, bảng dishes/chefs/ingredients | `api/prisma/schema.prisma`, `api/src/database.js` | Giữ nguyên trường và tên bảng; test so schema tự động |
-| DishIngredient, amount, khóa kép, cascade | Schema PostgreSQL và `api/src/relations.js` | Giữ nguyên mô hình và khóa ngoại |
-| ChefDish, khóa kép, cascade | Schema PostgreSQL và API quan hệ chefs/dishes | Giữ nguyên mô hình |
-| Ingredient.stock | Form nguyên liệu, inline create, bảng công thức | Validate integer ≥ 0, không bị trừ khi chỉ tạo công thức |
-| Seed tám món Soucha | `api/prisma/seed-data.js`, `src/soucha-menu.js` | Giữ tên/giá/danh mục/ảnh |
-| Seed công thức và đầu bếp–món | Prisma seed và `api/sql/002-seed.sql` | Cùng một nguồn seed, không reset stock đã chỉnh |
-| Logo và ảnh menu | `web/public/` | Tái sử dụng asset |
-| Tìm món bằng q | `/dishes?q=...` và GET API | Giữ hành vi, không reload document |
-| Lọc danh mục | `/dishes?category=matcha` | Đã mang qua |
-| Sort giá | `/dishes?sort=price-asc` hoặc price-desc | Đã mang qua, phối hợp với q/category |
-| Chi tiết món người dùng | `/dishes/:id` | Hiện đủ trường, bổ sung nguyên liệu và số phần |
-| CRUD ba tài nguyên | Các URL `/admin/dishes`, `/admin/chefs`, `/admin/ingredients` | Giữ luồng thêm/sửa/xác nhận xóa |
-| `/admin/dishes/:id` — công thức | Cùng URL phía SPA | Đã mang qua, mỗi lần mở đọc dữ liệu mới |
-| Thêm nguyên liệu vào công thức | `/admin/dishes/:id/ingredients/new`, POST API | Chọn có sẵn hoặc tạo mới |
-| Sửa lượng từng nguyên liệu | `/admin/dishes/:id/ingredients/:ingredientId/edit`, PATCH API | Validate integer ≥ 1; giữ input khi lỗi |
-| Gỡ nguyên liệu sau xác nhận | `/admin/dishes/:id/ingredients/:ingredientId/delete`, DELETE API | Chỉ xóa sau nút xác nhận; kho vẫn còn nguyên liệu |
-| Tính số phần với tồn kho | `api/src/recipe.js`, trường servings | Mang hàm tuần 3; min floor(stock/amount); trống = 0 |
-| `/admin/chefs/:id` | Cùng URL phía SPA | Đã mang danh sách món và form gán |
-| Chống gán món trùng | Transaction + khóa kép + validation | Đã mang qua |
-| Gỡ món khỏi đầu bếp sau xác nhận | `/admin/chefs/:id/dishes/:dishId/delete` | Chỉ gỡ liên kết, không xóa món |
-| Kodchasan | `web/public/fonts`, style.css | Giữ family, tự phục vụ đủ bốn weight và glyph tiếng Việt |
-| EJS render, method-override, 303 | SPA + fetch đúng POST/PATCH/DELETE + History API | Chuyển theo đề REST API/SPA; không giữ cơ chế SSR |
-| 404 cho bản ghi thiếu, 400 validation trong SSR | API trả 200 + NOT_FOUND/VALIDATION_FAILED | Thay theo contract buổi REST API/SPA |
+| Danh sách/chi tiết món | Handler render EJS | API JSON và trang SPA dựng DOM |
+| Form tạo/sửa | HTML form + redirect 303 | Fetch, validate cả client/server, giữ input khi lỗi |
+| Xóa dữ liệu | Trang xác nhận, method-override rồi redirect | Trang xác nhận SPA, DELETE sau khi xác nhận |
+| Công thức và amount | Handler/template SSR | API quan hệ và trang công thức SPA |
+| Ingredient.stock và servings | Logic nghiệp vụ trên server | Giữ cách tính min floor(stock/amount), công thức trống = 0 |
+| Gán/gỡ món Chef | Handler/template SSR | API quan hệ + SPA, giữ khóa kép chống trùng |
+| Tạo món kèm nguyên liệu mới | Không nằm trong form tạo món ban đầu | Có từ bước tuần 4, lưu cùng transaction; tuần 5 kế thừa |
+| Xử lý lỗi | HTML 400/404/500 | Tách lỗi nghiệp vụ JSON và lỗi kỹ thuật; UI trạng thái riêng |
+| Chống phản hồi cũ | Tải document theo request | AbortController theo route, pending và kiểm tra response |
+| Cấu hình | DATABASE_URL phía server | Giữ secret phía API; web chỉ nhận API_BASE_URL công khai |
 
-Tuần 4 có thêm chức năng so với form tuần 3: tạo đồng thời nhiều nguyên liệu mới ngay trong lúc thêm món và lưu toàn bộ bằng transaction. Tuần 3 tách tạo món rồi vào trang công thức để gắn nguyên liệu.
+File cần review ở tuần 5:
 
-## 3. SQL và dữ liệu Supabase
+- [api/src/app.js](./api/src/app.js): route, contract JSON, CORS, CRUD.
+- [api/src/pagination.js](./api/src/pagination.js): tìm/lọc/sort/count/phân trang và nhận diện từ.
+- [api/prisma/search-setup.sql](./api/prisma/search-setup.sql): extension, hàm và trigger.
+- [web/src/app.js](./web/src/app.js): History router và các trang.
+- [web/src/menu-pagination.js](./web/src/menu-pagination.js): danh sách/tìm kiếm/bộ lọc và ba UI phân trang.
+- [web/src/page-buffer.js](./web/src/page-buffer.js): dùng lại request trang kế tiếp.
+- [web/src/api.js](./web/src/api.js): ranh giới gọi API và kiểm tra response.
 
-Các file:
+Quản lý công thức, tồn kho, tính servings, dropdown tìm nguyên liệu và các transaction không phải đều được viết mới ở tuần 5: phần lớn đã được mang từ SSR sang SPA trong tuần 4.
 
-- [Schema PostgreSQL](./api/sql/001-schema.sql)
-- [Dữ liệu mẫu PostgreSQL](./api/sql/002-seed.sql)
-- [Cách dùng SQL/Supabase](./api/sql/README.md)
-- [Schema Prisma chính](./api/prisma/schema.prisma)
+## 5. Phần UI hiện tại và phần sẽ cập nhật sau
 
-Trong source tuần 3 hiện tại chỉ có `.env.example`, không có URL thật hoặc SQL dump. Vì vậy đã chuyển **schema và seed trong source**; chưa tuyên bố đã sao chép các bản ghi thật trên Supabase. Nếu điền cùng URL của tuần 3 vào `week4/api/.env`, tuần 4 đọc trực tiếp đúng các bảng cũ; không phải copy dữ liệu sang SQLite.
+### Đã có trong code
 
-Sau khi điền URL, chạy từ `week4`:
+- Logo mèo, màu kem/xanh matcha/nâu và ảnh đồ uống của Soucha; Kodchasan được tự phục vụ ở SPA.
+- Thẻ món responsive, hover nhẹ và hiệu ứng xuất hiện ngắn; tên/giá/hành động rõ ràng.
+- Tìm kiếm thông minh tự động, không có ô chọn Cách tìm.
+- Năm bộ lọc: Danh mục, Trạng thái, Sắp xếp, Giá từ, Đến.
+- Dropdown sort chỉ còn tên/giá/mới nhất; không có Mặc định/Liên quan nhất. Khi chưa chọn, server tự dùng thứ tự phù hợp.
+- Số trang/Tải thêm/Cuộn liên tục; mặc định 12 món, lựa chọn 12/24/36/48/96, giữ bộ lọc trên URL.
+- Link cũ có kích thước không phù hợp được làm tròn lên bội số 4, tối thiểu 12, bắt đầu lại từ trang đầu.
+- Loading/empty/error/end, tổng kết quả, thanh tiến độ, thông báo correctedQuery và gợi ý yếu.
 
-```powershell
-npm run db:generate --workspace @soucha/api
-npm run test:live
-npm run dev
-```
+### Dự kiến, chưa được tính là hoàn thành
 
-`test:live` chỉ đếm bản ghi và báo provider, không in mật khẩu/URL và không ghi dữ liệu. Nếu database mới trống, dùng `npm run setup` để đồng bộ schema/seed. File SQL tạo bảng dành cho database mới; database tuần 3 đã có bảng thì không cần chạy lại DDL.
+Hướng đang trao đổi là **playful 3D + spring motion**: ly đồ uống 3D ở hero, chuyển động nhấp nhô/nảy, mascot và thẻ món phản ứng khi tương tác. Chưa triển khai hoặc nghiệm thu các hiệu ứng này. Khi người dùng duyệt bản UI mới, cần viết lại mục này theo hành vi thật, không dùng ý tưởng thay cho bằng chứng.
 
-Hiện phần nghiệm thu tự động dùng database riêng: SQLite cho các request API/Chrome; PostgreSQL cục bộ qua PGlite để thực thi hai file SQL. Kết nối Supabase thật chờ URL của người dùng; các kiểm thử trên không dùng thông tin đăng nhập giả để khẳng định kết nối thật.
+Tài liệu có thể tham chiếu khi triển khai: [AI implementation guideline](../../folder_UI_Training/AI_implementation_guideline.md), [Cinematic scroll guideline](../../folder_UI_Training/CINEMATIC_SCROLL_UI_GUIDELINE.md). Đây là tài liệu thiết kế, không phải bằng chứng rằng 3D đã có.
 
-## 4. Font tiếng Việt
+## 6. Kiểm chứng và những phần còn thiếu
 
-Tuần 3 dùng Kodchasan từ Google Fonts; bản đầu tuần 4 trộn font serif ở tiêu đề với sans-serif của phần nhập liệu. Đã thống nhất Kodchasan, giữ UTF-8, lưu font Regular/Medium/SemiBold/Bold trong dự án và preload bản Regular.
+### Kết quả hiện có
 
-Browser test không chỉ đọc CSS: Chrome báo font thực tế dùng để vẽ chuỗi có các dấu `Ắ Ằ Ẳ Ẵ Ặ Ế Ề Ể Ễ Ệ Ố Ồ Ổ Ỗ Ộ Ơ Ư Ứ Ừ Ử Ữ Ự` là Kodchasan và không có font fallback. Các input, label và h1 cùng dùng family này. Xem [nguồn font và giấy phép](./web/public/fonts/README.md).
+- **31/31 nhóm npm test**, chạy lại trong lượt viết báo cáo: CRUD, contract, CORS, quan hệ, transaction, schema PostgreSQL, tìm kiếm và phân trang.
+- Kết quả browser gần nhất trong cùng phiên: **20/20** luồng SPA/quản trị, **9/9** phân trang, **8/8** tìm kiếm — tổng **37 nhóm**, không có page error.
+- Xác minh Supabase chỉ đọc: fts là cột tsvector thường; có ba index tìm/lọc; chatma/matcha trả cùng tập kết quả.
+- Database test riêng được phép thêm/sửa/xóa để kiểm tra logic; lượt kiểm chứng Supabase cho báo cáo không thực hiện CRUD ghi.
 
-## 5. Kết quả kiểm tra
+Có thể tạo lại bằng chứng bằng:
 
-- `npm test`: **16/16 nhóm đạt**, gồm CRUD, contract, CORS, lỗi kỹ thuật, giao dịch công thức, quan hệ, stock, lọc/sort, so schema tuần 3 và chạy SQL PostgreSQL.
-- `npm run test:browser`: **20/20 nhóm đạt**, gồm tạo nguyên liệu ngay trong form, sửa/gỡ công thức, số phần, gán/gỡ món, validation giữ input, glyph tiếng Việt, tìm kiếm trong hai dropdown và các luồng SPA gốc.
-- Kiểm tra mở trực tiếp + Reload **21 URL**: 14 URL bài gốc, 6 URL quan hệ và 1 URL không tồn tại. Luồng thêm/sửa/gỡ không tạo thêm document request.
-- Không thay source tuần 3 và không tự ghi đè `.env` tuần 4.
+~~~powershell
+npm test
+npm run test:browser
+npm run test:pagination:browser
+npm run test:fulltext:browser
+~~~
 
-Ảnh được tạo khi chạy browser test, trong thư mục được gitignore `tests/results`:
+### Chưa nên kết luận đã hoàn thành mọi yêu cầu bài tìm kiếm
 
-- [Form tạo món kèm nguyên liệu](./tests/results/recipe-form-desktop.png)
-- [Trang công thức desktop](./tests/results/recipe-detail-desktop.png)
-- [Trang công thức mobile](./tests/results/recipe-detail-mobile.png)
-- [Món đầu bếp phụ trách](./tests/results/chef-assignments.png)
-- [Menu dùng font mới](./tests/results/menu-desktop.png)
-- [Báo cáo browser và request](./tests/results/browser-report.json)
+Slide hiện yêu cầu bốn mode basic, advanced, fulltext, fuzzy. API tuần 5 hiện nhận **basic, fulltext, smart**; các bộ lọc nâng cao/fuzzy có trong pipeline nhưng **chưa tách hai mode advanced/fuzzy đúng hợp đồng slide**. Cần phân biệt mức hoàn thiện chức năng sản phẩm với việc đáp ứng tên mode và quy tắc nghiệm thu của đề.
 
-Đối chiếu với riêng yêu cầu của bài giảng REST API/SPA vẫn nằm ở [BAO-CAO-DOI-CHIEU.md](./BAO-CAO-DOI-CHIEU.md).
+Ngoài ra: tìm gần đúng có trường hợp mơ hồ; offset có thể dịch khi dữ liệu thay đổi; index có sẵn không bảo đảm mọi phép chấm Smart dùng được index; chưa có giỏ hàng/checkout và cảnh 3D mới trong ứng dụng này.
+
+## 7. Checklist review
+
+- [ ] Đọc schema tuần 3 và tuần 5: năm bảng nghiệp vụ giữ nguyên, phần mới là tìm kiếm.
+- [ ] Theo dõi một lần thêm món: SSR HTML/303 ở tuần 3 so với API JSON/SPA ở tuần 5.
+- [ ] Thử tìm thiếu từ, sai chính tả, không dấu và đảo chữ.
+- [ ] So chatma với matcha qua toàn bộ trang, không chỉ trang đầu.
+- [ ] Kiểm tra minPrice=0, available=false, trang vượt phạm vi và retry trang tiếp theo.
+- [ ] Xem lại UI thực tế trước khi cập nhật phần 3D dự kiến.
+- [ ] Nếu nộp theo slide, đối chiếu riêng các mode API còn thiếu; không dùng báo cáo này để khẳng định đã đạt tất cả.
+
+Đối chiếu tuần 4 chi tiết: [BAO-CAO-DOI-CHIEU.md](./BAO-CAO-DOI-CHIEU.md). Hợp đồng kỹ thuật: [pagination-api.md](./docs/pagination-api.md), [full-text-search.md](./docs/full-text-search.md).

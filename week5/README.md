@@ -67,6 +67,14 @@ npm run db:seed:beverages -- --apply
 
 Week4 và week5 hiện dùng chung database Supabase theo cấu hình đã chọn; dữ liệu nhập từ week5 cũng xuất hiện khi chạy week4.
 
+## Tối ưu tải món, FTS và danh sách Chef
+
+API phân trang lấy items và total trong một câu SQL. Tải thêm/Cuộn liên tục chuẩn bị trước tối đa một trang, dùng lại request đang chạy và hủy khi đổi điều kiện. Ảnh/font được cache 24 giờ; dữ liệu API/config/source vẫn được tải mới. Xem số đo và chi tiết tại [performance-and-search-setup.md](./docs/performance-and-search-setup.md).
+
+FTS dùng cột `tsvector` khớp Prisma và trigger tự cập nhật từ name/description. Chạy `npm run db:search-setup` để đồng bộ database hiện có; `npm run db:push --workspace @soucha/api` tự chạy setup trước/sau. Helper thực thi nguyên file SQL; giữ cả function/DO block và comment.
+
+Danh sách 28 Chef đã chuyển sang thứ tự tên Việt Nam, chuyên môn Pha chế, được thêm không trùng bằng `npm run db:seed:chefs -- --apply`. Xem trước tên bằng `npm run db:seed:chefs -- --preview`. Người đã có không bị ghi đè.
+
 ## Cấu trúc
 
 ```text
@@ -126,7 +134,19 @@ Ngay trong form thêm/sửa món, bấm **Thêm dòng nguyên liệu**, chọn n
 
 Ô **Nguyên liệu** khi chọn từ kho và ô **Món ăn** khi gán cho đầu bếp đều có tìm kiếm ngay trong danh sách xổ xuống. Bấm ô để mở, gõ tên để lọc tức thì, chấp nhận cả không dấu và không phân biệt hoa/thường (ví dụ `sua`, `duong`, `TRA DAO`). Chọn bằng chuột hoặc phím mũi tên + Enter; Esc hoặc chuyển ra ngoài để đóng. Phải chọn một kết quả hợp lệ, chỉ nhập từ khóa không được coi là đã chọn; đổi từ khóa sẽ bỏ ID cũ để tránh lưu nhầm. Món đã gán cho đầu bếp không xuất hiện trong danh sách để gán thêm.
 
+## Ba UI phân trang (week5)
+
+Trang thực đơn có thanh chọn **Số trang / Tải thêm / Cuộn liên tục**. Cả ba lấy từng phần dữ liệu qua `/api/dishes/paged`; số trang thay danh sách, hai kiểu còn lại nối thêm. Có chọn số món mỗi lượt, lọc category/trạng thái/khoảng giá và sort tên/giá trên toàn bộ tập phù hợp tại server.
+
+- `/dishes?view=pages&page=2&pageSize=10`: Reload/copy link/Back giữ đúng trang và điều kiện.
+- `/dishes?view=more&pageSize=10`: Tải thêm theo nút; khi mở lại link bắt đầu từ page 1.
+- `/dishes?view=infinite&pageSize=10`: Cuộn gần cuối để tải tiếp; khi mở lại link bắt đầu từ page 1; có nút Tải thêm dự phòng.
+
+Đổi điều kiện hoặc kiểu xem bắt đầu lại từ đầu, không trộn response cũ. Tải tiếp lỗi giữ cards cũ và thử lại đúng trang. [Đối chiếu HTML bài giảng](./docs/doi-chieu-html-pagination.md). Kiểm tra riêng UI bằng `npm run test:pagination:browser`; ảnh và báo cáo tạo trong `tests/results/`.
+
 ## API contract
+
+Week5 có thêm **`GET /api/dishes/paged?page=1&pageSize=10`** dùng chung cho UI số trang, Load More và Infinite Scroll. API phân trang tại database, trả `{ ok: true, data: { items, total, page, pageSize }, error: null }`; tối đa 100 món/trang. Hỗ trợ `q`, `category`, `minPrice`, `maxPrice`, `available`, `sort`, áp dụng trước phân trang. Contract và hướng dẫn tích hợp: [docs/pagination-api.md](./docs/pagination-api.md). Chạy `npm run test:pagination:live` để xác nhận từng trang trên Supabase mà không sửa dữ liệu.
 
 Cho mỗi resource trong ba tên trên:
 

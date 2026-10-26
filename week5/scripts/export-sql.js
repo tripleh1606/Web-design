@@ -9,7 +9,8 @@ const result = spawnSync(process.execPath, [require.resolve('prisma/build/index.
   cwd: root, encoding: 'utf8', env: { ...process.env, RUST_LOG: 'info' }
 });
 if (result.status !== 0) { console.error('Không xuất được schema SQL.'); process.exit(result.status || 1); }
-fs.writeFileSync(path.join(output, '001-schema.sql'), '-- PostgreSQL / Supabase schema ported from week3/restaurant/prisma/schema.prisma.\n-- Run this file only for a NEW empty database; existing week-3 databases already have these tables.\n\n' + result.stdout, 'utf8');
+const searchSetup = fs.readFileSync(path.join(root, 'api/prisma/search-setup.sql'), 'utf8');
+fs.writeFileSync(path.join(output, '001-schema.sql'), '-- PostgreSQL / Supabase core schema with Week 5 search support.\n-- Run this file only for a NEW empty database; existing databases use db:search-setup.\n\nCREATE EXTENSION IF NOT EXISTS pg_trgm;\n\n' + result.stdout + '\n' + searchSetup, 'utf8');
 const literal = (value) => value === null ? 'NULL' : typeof value === 'boolean' ? String(value).toUpperCase() : typeof value === 'number' ? String(value) : "'" + value.replaceAll("'", "''") + "'";
 const statements = [
   '-- UTF-8 PostgreSQL seed from week3/restaurant: dishes, chefs, ingredients and both relations.',

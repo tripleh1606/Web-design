@@ -427,14 +427,14 @@ async function main() {
         await page.locator('[data-state="notFound"]').waitFor();
       }
       for (const failure of ['network', 'http', 'json', 'shape']) {
-        await page.route(app.apiUrl + '/api/dishes', (route) => failure === 'network' ? route.abort('connectionrefused') : route.fulfill({
+        await page.route(app.apiUrl + '/api/dishes/paged?**', (route) => failure === 'network' ? route.abort('connectionrefused') : route.fulfill({
           status: failure === 'http' ? 404 : 200, contentType: 'application/json',
           body: failure === 'json' ? 'bad JSON' : failure === 'shape' ? JSON.stringify({ ok: true, data: null }) : '{}'
         }));
         await page.goto(origin + '/dishes');
         await page.locator('[data-state="error"]').waitFor();
         assert.equal(await page.locator('[data-state="notFound"]').count(), 0);
-        await page.unroute(app.apiUrl + '/api/dishes');
+        await page.unroute(app.apiUrl + '/api/dishes/paged?**');
         await page.getByRole('button', { name: 'Thử lại' }).click();
         await page.locator('.dish-card').first().waitFor();
       }

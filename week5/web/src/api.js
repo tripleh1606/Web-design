@@ -11,12 +11,12 @@ export class ApiError extends Error {
 }
 
 // Every page goes through this one boundary: network -> HTTP/JSON -> business.
-export async function request(resource, { id, path, q, category, sort, collection, method = 'GET', data, signal } = {}) {
+export async function request(resource, { id, path, q, category, sort, page, pageSize, minPrice, maxPrice, available, paginated = false, collection, method = 'GET', data, signal } = {}) {
   const suffix = path ? '/' + path.split('/').map(encodeURIComponent).join('/') : '';
   const url = new URL(`${API_BASE_URL.replace(/\/$/, '')}/${resource}${id === undefined ? '' : '/' + encodeURIComponent(id)}${suffix}`);
-  if (q) url.searchParams.set('q', q);
-  if (category) url.searchParams.set('category', category);
-  if (sort) url.searchParams.set('sort', sort);
+  for (const [key, value] of Object.entries({ q, category, sort, page, pageSize, minPrice, maxPrice, available })) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
+  }
   let response;
   try {
     response = await fetch(url, {
@@ -38,9 +38,16 @@ export async function request(resource, { id, path, q, category, sort, collectio
     throw new ApiError('business', body.error.message || 'Không thể thực hiện thao tác.', body.error);
   }
   if (!Object.hasOwn(body, 'data')) throw new ApiError('technical', 'Response thiếu data.');
-  const validData = method === 'DELETE' ? body.data === null :
+  const validData = paginated ? body.error === null && body.data && Array.isArray(body.data.items) &&
+    Number.isInteger(body.data.total) && body.data.total >= 0 &&
+    Number.isInteger(body.data.page) && body.data.page >= 1 &&
+    Number.isInteger(body.data.pageSize) && body.data.pageSize >= 1 && body.data.pageSize <= 100 &&
+    body.data.items.length <= body.data.pageSize && body.data.items.every((row) => row && Number.isInteger(row.id) && row.id > 0) :
+    method === 'DELETE' ? body.data === null :
     method === 'GET' && (collection ?? (id === undefined)) ? Array.isArray(body.data) :
       body.data && !Array.isArray(body.data) && typeof body.data === 'object';
   if (!validData) throw new ApiError('technical', 'Kiểu dữ liệu trong response không hợp lệ.');
   return body.data;
 }
+
+export const requestDishPage = (options) => request('dishes', { ...options, path: 'paged', paginated: true, collection: false });

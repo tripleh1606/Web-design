@@ -1,6 +1,7 @@
 const express = require('express');
 const { resources, parseId, validate } = require('./validation');
 const { dishInclude, chefInclude, viewRecord, recipeData, BusinessError, registerRelations } = require('./relations');
+const { parsePageQuery, dishPage } = require('./pagination');
 
 const route = (handler) => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
 const success = (res, data) => res.status(200).json({ ok: true, data });
@@ -32,6 +33,18 @@ function createApp({ prisma, spaOrigin, logger = console }) {
     next();
   });
   app.use(express.json({ limit: '32kb' }));
+
+  // One server-paged API serves numbered pages, Load More and Infinite Scroll.
+  // Register before /api/dishes/:id so "paged" is not mistaken for an ID.
+  app.get('/api/dishes/paged', route(async (req, res) => {
+    const { fields, value } = parsePageQuery(req.query);
+    if (Object.keys(fields).length) return res.status(200).json({
+      ok: false, data: null,
+      error: { code: 'VALIDATION_FAILED', message: 'Điều kiện phân trang không hợp lệ.', fields }
+    });
+    const data = await dishPage(prisma, value);
+    return res.status(200).json({ ok: true, data, error: null });
+  }));
 
   for (const [resource, config] of Object.entries(resources)) {
     const base = `/api/${resource}`;

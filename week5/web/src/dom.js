@@ -14,7 +14,7 @@ export function el(tag, props = {}, ...children) {
 export const link = (href, text, className = '') => el('a', { href, 'data-link': '', className }, text);
 export function dishImage(record, className = '') {
   const safe = typeof record.image === 'string' && /^\/beverages\/[a-z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(record.image);
-  return el('img', { src: safe ? record.image : '/logo.svg', alt: record.name || 'Soucha', className, loading: 'lazy', onError: (event) => {
+  return el('img', { src: safe ? record.image : '/logo.svg', alt: record.name || 'Soucha', className, loading: 'lazy', decoding: 'async', onError: (event) => {
     event.target.onerror = null;
     if (!event.target.src.endsWith('/logo.svg')) event.target.src = '/logo.svg';
   } });

@@ -17,11 +17,15 @@ model Dish {
   image       String?
   available   Boolean  @default(true)
   createdAt   DateTime @default(now())
+  // Kept in sync by dishes_fts_refresh from search-setup.sql.
   fts         Unsupported("tsvector")?
 
   ingredients DishIngredient[]
   chefs       ChefDish[]
 
+  @@index([fts], type: Gin, map: "dishes_fts_idx")
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "dishes_name_trgm_idx")
+  @@index([category, available, price], map: "dishes_adv_filter_idx")
   @@map("dishes")
 }
 

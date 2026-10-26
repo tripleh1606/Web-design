@@ -33,6 +33,11 @@ export function createWebServer({ apiBaseUrl = 'http://localhost:3001/api' } = {
       const allowedRoot = pathname.startsWith('/src/') ? path.join(root, 'src') : path.join(root, 'public');
       if (!publicRoute && !file.startsWith(`${allowedRoot}${path.sep}`)) return send(404, 'text/plain', 'Not found');
       const content = await fs.readFile(file);
+      // Versionless images/fonts can be revalidated daily. HTML, source and
+      // config.js keep no-store so edits and API settings remain immediately visible.
+      if (!publicRoute && /\.(?:svg|jpeg|jpg|png|webp|ttf|woff2)$/.test(file)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+      }
       return send(200, types[path.extname(file)] || 'application/octet-stream', content);
     } catch (error) {
       return send(error instanceof URIError ? 400 : error.code === 'ENOENT' || error.code === 'EISDIR' ? 404 : 500, 'text/plain', 'Không thể tải tài nguyên.');

@@ -13,8 +13,8 @@
     "test:live": "node tests/live-smoke.js",
     "test:bruno": "cd bruno/restaurant-api && bru run -r --env local",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:search-setup": "prisma db execute --file prisma/search-setup.sql --schema prisma/schema.prisma",
+    "db:push": "node scripts/setup-search.js && prisma db push && node scripts/setup-search.js",
+    "db:search-setup": "node scripts/setup-search.js",
     "db:seed": "prisma db seed"
   },
   "prisma": {

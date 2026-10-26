@@ -7,6 +7,7 @@
     "dev": "node --watch server.js",
     "db:generate": "node ../scripts/database.js generate",
     "db:push": "node ../scripts/database.js push",
+    "db:search-setup": "node ../scripts/database.js search",
     "db:seed": "node ../scripts/database.js seed"
   },
   "prisma": { "seed": "node prisma/seed.js" },

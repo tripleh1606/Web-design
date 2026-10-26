@@ -3,6 +3,7 @@ import { resources, money, categoryLabel, validateForm } from './resources.js';
 import { el, link, dishImage } from './dom.js';
 import { createRecipeEditor } from './recipe-editor.js';
 import { recipePage, chefPage, ingredientForm, unlinkPage } from './relations.js';
+import { renderMenu } from './menu-pagination.js';
 
 const main = document.querySelector('main');
 // Only routing lifecycle is shared. Records and lists belong to each page closure.
@@ -53,42 +54,7 @@ function createContext(adminResource) {
 function loading(ctx) { ctx.body.replaceChildren(panel('loading', 'Đang tải dữ liệu…', 'Soucha đang chuẩn bị nội dung cho bạn.')); }
 
 async function dishList(ctx, url) {
-  document.title = 'Soucha · Thực đơn';
-  const q = url.searchParams.get('q') || '';
-  const category = url.searchParams.get('category') || '';
-  const sort = ['price-asc', 'price-desc'].includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : '';
-  const search = el('input', { name: 'q', type: 'search', value: q, maxLength: 120, placeholder: 'Bạn muốn uống gì hôm nay?', 'aria-label': 'Tìm món theo tên' });
-  const categorySelect = el('select', { id: 'menu-category', name: 'category', onChange: () => submitSearch() },
-    [['', 'Tất cả danh mục'], ['coffee', 'Coffee'], ['matcha', 'Matcha'], ['houjicha', 'Houjicha']].map(([value, label]) => el('option', { value, selected: value === category }, label)));
-  const sortSelect = el('select', { id: 'menu-sort', name: 'sort', onChange: () => submitSearch() },
-    [['', 'Mới nhất'], ['price-asc', 'Giá tăng dần'], ['price-desc', 'Giá giảm dần']].map(([value, label]) => el('option', { value, selected: value === sort }, label)));
-  const submitSearch = () => {
-    const params = new URLSearchParams();
-    if (search.value.trim()) params.set('q', search.value.trim());
-    if (categorySelect.value) params.set('category', categorySelect.value);
-    if (sortSelect.value) params.set('sort', sortSelect.value);
-    navigate('/dishes' + (params.size ? '?' + params.toString() : ''));
-  };
-  const result = el('div', { className: 'menu-results', 'aria-live': 'polite' });
-  ctx.body.replaceChildren(el('section', { className: 'hero' },
-    el('div', {}, el('span', { className: 'eyebrow' }, 'MATCHA · HOUJICHA · MỖI NGÀY'),
-      el('h1', {}, 'Chậm một chút,', el('br'), el('em', {}, 'thưởng một ngụm trà.')),
-      el('p', {}, 'Từ những lá trà được chọn lọc, Soucha gửi bạn một khoảng dịu dàng trong ngày.')),
-    el('img', { src: '/logo.svg', alt: '', className: 'hero-mark' })),
-    el('section', { className: 'menu-section' }, el('div', { className: 'section-heading' }, el('h2', {}, 'Thực đơn nhà Soucha'), el('span', {}, 'Pha một chút bình yên')),
-      el('form', { className: 'search', onSubmit: (event) => {
-        event.preventDefault();
-        submitSearch();
-      } }, search, el('button', { type: 'submit' }, 'Tìm món'), ...(q || category || sort ? [link('/dishes', 'Xóa bộ lọc', 'button secondary')] : [])),
-      el('div', { className: 'menu-filters' }, el('div', {}, el('label', { htmlFor: 'menu-category' }, 'Danh mục'), categorySelect), el('div', {}, el('label', { htmlFor: 'menu-sort' }, 'Sắp xếp'), sortSelect)), result));
-  result.append(panel('loading', 'Đang tải thực đơn…', 'Những hương vị đang chờ bạn.'));
-  try {
-    const rows = await request('dishes', { q, category, sort, signal: ctx.signal });
-    if (ctx.signal.aborted) return;
-    result.replaceChildren(el('p', { className: 'result-count' }, `${rows.length} món${q ? ` · Kết quả cho “${q}”` : ' · Được pha bằng cả sự chăm chút'}`));
-    if (!rows.length) return result.append(panel('empty', 'Chưa có món phù hợp', 'Thử từ khóa khác hoặc quay lại toàn bộ thực đơn.', link('/dishes', 'Xem tất cả', 'button secondary')));
-    result.append(el('div', { className: 'dish-grid' }, rows.map(linkCard)));
-  } catch (error) { errorPanel(error, { ...ctx, body: result }); }
+  return renderMenu(ctx, url, { navigate, renderCard: linkCard });
 }
 function linkCard(record) {
   return el('article', { className: 'dish-card' }, linkImage(record),

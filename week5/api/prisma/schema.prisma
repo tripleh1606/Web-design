@@ -17,6 +17,7 @@ model Dish {
   image       String?
   available   Boolean  @default(true)
   createdAt   DateTime @default(now())
+  fts         Unsupported("tsvector")?
 
   ingredients DishIngredient[]
   chefs       ChefDish[]

@@ -27,13 +27,30 @@ Món **Houjicha Cold Whisk**:
 | `houjicha whisk` | Không (không liền nhau) | Có | Có |
 | `houjcha whsk` | Không | Không | Có |
 | `houjcha whsik` | Không | Không | Có (đảo hai chữ liền kề) |
+| `houcha` | Không | Không | Có (thiếu hai ký tự) |
+| `kswh` | Không | Không | Gợi ý theo ký tự nếu không có kết quả tốt hơn |
+| `chatma` | Không | Không | Nhận diện `matcha`, tìm toàn bộ tập kết quả theo từ đó |
 | `houjicha zzzzz` | Không | Không | Không |
 
-Smart kết hợp full-text với `pg_trgm.similarity` trên từng từ trong tên, không xét cả tên thành một chuỗi duy nhất. Mỗi từ khóa phải tìm được ít nhất một từ trong tên với điểm >= 0.3. Từ dưới 3 ký tự phải khớp đúng; chênh lệch độ dài bị giới hạn `max(1, floor(length/4))`. Một lần đảo hai ký tự liền kề được nhận diện riêng, điểm 0.8; từ giống hệt có điểm 1. Điểm fuzzy là trung bình điểm tốt nhất của từng từ. Đây là độ tương đồng theo quy tắc, không phải xác suất hay mô hình AI.
+Smart chuẩn hóa Unicode NFC, bỏ dấu bằng `unaccent`, chuyển chữ thường rồi so từng từ bằng helper SQL `soucha_word_score`. Mọi từ khóa đều phải được xét; không âm thầm bỏ từ không khớp.
 
-Khớp full-text được điểm `1 + ts_rank(..., 32)`, luôn xếp trước fuzzy. Khi bằng điểm dùng id tăng dần. Có thể chọn giá/tên để ghi đè thứ tự mặc định của Smart. API trả `rank` và `matchType: fulltext|fuzzy`; UI ghi “Tên gần với từ khóa” cho kết quả fuzzy. Không cam kết tìm ra mọi kiểu viết sai hay nhận diện từ đồng nghĩa.
+**Nhận diện từ trước khi tìm món:** nếu một token không tồn tại trong từ vựng tên món, dài 5–12 ký tự và chỉ có đúng một từ khác cùng toàn bộ ký tự/số lần lặp, Smart dùng từ đó để tìm. Ví dụ `chatma → matcha`. Sau đó chạy full-text với từ đã nhận diện trên tên + mô tả và chấm fuzzy theo từ này, lấy toàn bộ kết quả rồi mới đếm/phân trang. Từ vựng dùng toàn database, nên category/giá/trạng thái không làm thay đổi cách diễn giải từ khóa. Nếu token đã tồn tại hoặc có nhiều ứng viên hoán vị, không tự thay từ.
 
-Smart thực hiện lọc, tính điểm, đếm và phân trang tại PostgreSQL trong một câu SQL. CTE materialized chia sẻ tập kết quả cho COUNT và trang; không tải hết dữ liệu về client/Node để tìm. Nhánh fuzzy chấm điểm từng từ của các tên sau bộ lọc; GIN full-text/trigram đã có nhưng không được coi là bảo đảm tăng tốc cho phép chấm điểm này. Với dữ liệu lớn hơn cần đo lại và cân nhắc bảng từ vựng có index hoặc công cụ tìm kiếm chuyên dụng.
+API trả thêm `correctedQuery` khi có bước nhận diện; UI hiện “Hiển thị kết quả cho …”, giữ nguyên từ người dùng nhập trong ô tìm và URL. Metadata vẫn có khi trang vượt phạm vi hoặc bộ lọc không còn kết quả. `matchType: corrected` chỉ các món khớp full-text với từ đã nhận diện.
+
+Điều này sửa lỗi trả thiếu với `chatma`: trước đây các từ như “chất”/“chai” có điểm cao hơn phép hoán vị `matcha`, khiến bộ lọc bỏ gần hết nhóm Matcha. Kiểm tra hồi quy có nhiều món Matcha, một món “Matcha 100% nguyên chất” và một món “Cà phê đóng chai”, so toàn bộ ID qua nhiều trang với truy vấn `matcha`.
+
+- **Edit distance (Levenshtein):** đếm số lần thêm/xóa/thay ký tự. Từ 2–4 ký tự cho phép 1 thao tác, từ 5 ký tự trở lên cho phép 2; chênh lệch độ dài không vượt ngân sách này. Từ hai ký tự chỉ được sửa khi query có ít nhất hai từ. Từ một ký tự phải đúng hoàn toàn. Điểm là `1 - distance / max(length)`.
+- **Trigram similarity:** giữ ngưỡng 0.3 ở nhánh so từng từ có từ ba ký tự, nhưng chỉ chấm khi chênh lệch độ dài nằm trong ngân sách; chuyển điểm vào khoảng 0.5–0.99 để phân biệt với gợi ý yếu. Một lần đảo hai chữ liền kề vẫn được nhận diện riêng, điểm 0.8. Đây không phải triển khai toàn bộ thuật toán Damerau–Levenshtein.
+- **Character multiset / anagram-like matching:** với từ dài 4–12 ký tự, chênh độ dài tối đa 1, yêu cầu ít nhất 80% ký tự giống nhau, có tính số lần lặp. Vì bỏ qua thứ tự, bằng chứng này yếu: điểm 0.35 và chỉ trả dưới dạng gợi ý khi toàn bộ tập kết quả sau bộ lọc không có khớp full-text hoặc fuzzy thông thường. Ví dụ `kswh` có thể gợi ý `Whisk`; không coi đó là phép sửa chính tả chắc chắn.
+
+Điểm fuzzy là trung bình điểm tốt nhất của từng từ; mỗi từ phải đạt ít nhất 0.5. Khi phải dùng nhánh ký tự yếu, mỗi từ đạt ít nhất 0.35 và điểm cuối giảm một nửa. Đây là độ tương đồng theo quy tắc, không phải xác suất hay mô hình AI. Các hàm và ngưỡng được định nghĩa tại `api/prisma/search-setup.sql`.
+
+Với hai món `Bánh bò` và `Cơm bò`, `báh bì` được chuẩn hóa thành `bah bi`: `bah → banh` là thêm một chữ, `bi → bo` là thay một chữ. Kết quả chọn `Bánh bò`; từ `com` không đủ gần `bah`. Các món này chỉ được thêm trong database test riêng, không được nhập vào thực đơn Supabase.
+
+Trong Smart, khớp full-text với từ gốc được điểm `2 + ts_rank(..., 32)`, khớp full-text với từ nhận diện được `1 + ts_rank(..., 32)`, sau đó đến fuzzy. Khi bằng điểm dùng id tăng dần. Full-text thuần giữ cách tính `ts_rank` cũ. Có thể chọn giá/tên để ghi đè thứ tự mặc định của Smart. API trả `rank` và `matchType: fulltext|corrected|fuzzy|suggestion`; UI phân biệt “Tên gần với từ khóa” với “Gợi ý theo ký tự · khớp yếu”. Không cam kết tìm ra mọi kiểu viết sai hay nhận diện từ đồng nghĩa.
+
+Smart thực hiện nhận diện từ, lọc, tính điểm, đếm và phân trang tại PostgreSQL trong một câu SQL. CTE materialized chia sẻ tập kết quả cho COUNT và trang; không tải hết dữ liệu về client/Node để tìm. Tên được chuẩn hóa một lần, gom thành bộ từ vựng toàn cục không trùng và chấm mỗi cặp từ khóa–từ vựng một lần, rồi dùng lại điểm cho mọi món sau bộ lọc. GIN full-text/trigram đã có nhưng không được coi là bảo đảm tăng tốc cho phép chấm điểm này. Với dữ liệu lớn hơn cần đo lại và cân nhắc bảng từ vựng có index hoặc công cụ tìm kiếm chuyên dụng.
 
 ## Dùng trên UI
 
@@ -45,10 +62,10 @@ Full-text cố định thứ tự **Liên quan nhất**; ô sort bị khóa đ�
 
 ## Giới hạn được công bố
 
-- Full-text thuần dùng cấu hình `simple`, không tự bỏ dấu hay sửa lỗi chính tả. Smart chịu một số lỗi gõ nhưng không có bước bỏ dấu riêng; không bảo đảm mọi tên tiếng Việt viết không dấu đều khớp.
+- Full-text thuần dùng cấu hình `simple`, không tự bỏ dấu hay sửa lỗi chính tả. Smart bỏ dấu khi so tên, có ngân sách lỗi gõ hữu hạn; không bảo đảm mọi chuỗi sai đều tìm đúng món người dùng nghĩ tới.
 - q rỗng ở API fulltext trả `VALIDATION_FAILED`; chuỗi không tạo được token như `!!!` trả thành công với kết quả rỗng.
 - Không ghép `sort=price-asc` hoặc sort tên vào fulltext: API báo lỗi thay vì bỏ qua tham số đó.
-- Full-text/Smart có từ khóa cần PostgreSQL/Supabase và extension `pg_trgm` đã có trong setup. SQLite báo `FULLTEXT_REQUIRES_POSTGRESQL`; có thể dùng Theo tên cho SQLite. Không thay tìm gần đúng bằng LIKE.
+- Full-text/Smart có từ khóa cần PostgreSQL/Supabase. Setup cài `pg_trgm`, `unaccent`, `fuzzystrmatch` và hai helper SQL. Sau khi pull code, chạy `npm run db:search-setup` một lần rồi restart API. SQLite báo `FULLTEXT_REQUIRES_POSTGRESQL`; có thể dùng Theo tên cho SQLite. Không thay tìm gần đúng bằng LIKE.
 
 ## Tự kiểm tra
 
@@ -61,4 +78,4 @@ Unit/integration test thực thi câu SQL trên PostgreSQL cục bộ (PGlite), 
 
 Trên dữ liệu mẫu, thử `giả lập` với hai chế độ: cụm này có trong mô tả của các món mẫu, không có trong tên. Full-text sẽ tìm được các món đó.
 
-Tham khảo cơ chế PostgreSQL: [Supabase Full Text Search](https://supabase.com/docs/guides/database/full-text-search), [PostgreSQL pg_trgm và tích hợp với full-text](https://www.postgresql.org/docs/current/pgtrgm.html#PGTRGM-TEXT-SEARCH).
+Tham khảo cơ chế PostgreSQL: [Full Text Search](https://supabase.com/docs/guides/database/full-text-search), [pg_trgm](https://www.postgresql.org/docs/current/pgtrgm.html#PGTRGM-TEXT-SEARCH), [Levenshtein](https://www.postgresql.org/docs/current/fuzzystrmatch.html#FUZZYSTRMATCH-LEVENSHTEIN), [unaccent](https://www.postgresql.org/docs/current/unaccent.html).

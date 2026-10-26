@@ -19,6 +19,10 @@ test('search setup handles empty DB, plain/generated fts, NULL descriptions and 
   const sql = fs.readFileSync(sqlFile, 'utf8');
   try {
     await db.exec(sql); // pre-push on a brand new DB
+    const normalization = (await db.query('SELECT public.soucha_normalize_search($1) AS text', ['ĐẶNG Bánh bò'.normalize('NFD')])).rows[0].text;
+    assert.equal(normalization, 'dang banh bo');
+    assert.ok((await db.query("SELECT public.soucha_word_score('houcha','houjicha',1) AS score")).rows[0].score >= 0.5);
+    assert.ok(Math.abs((await db.query("SELECT public.soucha_word_score('kswh','whisk',1) AS score")).rows[0].score - 0.35) < 1e-6);
     await db.exec(fs.readFileSync(path.join(__dirname, '../api/sql/001-schema.sql'), 'utf8'));
     await db.query('INSERT INTO dishes (name,description,price) VALUES ($1,$2,$3)', ['Coffee Original', null, 32000]);
     const before = (await db.query('SELECT id,name,description,price FROM dishes')).rows;

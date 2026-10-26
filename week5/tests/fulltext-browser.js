@@ -40,14 +40,14 @@ async function main() {
     async function check(name, run) { await run(); results.push({ name, passed: true }); console.log('PASS:', name); }
     await check('Empty fulltext waits for input; name-only and fulltext return different result sets', async () => {
       await page.goto(origin + '/dishes');
-      await count(10);
+      await count(12);
       const before = requests.length;
       await page.locator('#menu-mode').selectOption('fulltext');
       await page.locator('[data-state="waiting"]').waitFor();
       assert.equal(requests.length, before);
       await page.getByRole('searchbox').fill('ceremonial vani');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
-      await count(10);
+      await count(12);
       assert.match(await page.locator('.result-count').innerText(), /\/ 40 món/);
       assert.match(await page.locator('.dish-card').first().innerText(), /Ceremonial Vani/);
       assert.equal(await page.locator('#menu-sort').isDisabled(), true);
@@ -56,15 +56,15 @@ async function main() {
       await count(1);
       assert.match(await page.locator('.result-count').innerText(), /\/ 1 món/);
       await page.locator('#menu-mode').selectOption('fulltext');
-      await count(10);
+      await count(12);
     });
     await check('Fulltext mode/query survive numbered navigation and reload; rank ordering stays stable', async () => {
       await page.getByRole('link', { name: 'Trang 2', exact: true }).click();
-      await count(10);
+      await count(12);
       assert.equal(new URL(page.url()).searchParams.get('mode'), 'fulltext');
       const before = await page.locator('.dish-card').evaluateAll((cards) => cards.map((card) => card.dataset.dishId));
       await page.reload();
-      await count(10);
+      await count(12);
       assert.equal(await page.locator('#menu-mode').inputValue(), 'fulltext');
       assert.deepEqual(await page.locator('.dish-card').evaluateAll((cards) => cards.map((card) => card.dataset.dishId)), before);
       await page.screenshot({ path: path.join(output, 'fulltext-desktop.png'), fullPage: true });
@@ -76,18 +76,18 @@ async function main() {
       await count(1);
       assert.equal(new URL(page.url()).searchParams.get('page'), '1');
       await page.getByRole('link', { name: 'Xóa bộ lọc' }).click();
-      await count(10);
+      await count(12);
       assert.equal(await page.locator('#menu-mode').inputValue(), 'smart');
       assert.equal(await page.getByRole('searchbox').inputValue(), '');
     });
     await check('Load More and Infinite Scroll use actual fulltext SQL and stop at total', async () => {
-      await page.goto(origin + '/dishes?view=more&mode=fulltext&q=ceremonial+vani&pageSize=10');
-      await count(10);
+      await page.goto(origin + '/dishes?view=more&mode=fulltext&q=ceremonial+vani&pageSize=12');
+      await count(12);
       await page.locator('[data-load-next]').click();
-      await count(20);
+      await count(24);
       assert.equal(requests.at(-1).searchParams.get('mode'), 'fulltext');
       await page.locator('[data-view=infinite]').click();
-      await count(10);
+      await count(12);
       while (await page.locator('.dish-card').count() < 40) {
         const before = await page.locator('.dish-card').count();
         await page.locator('.pagination-sentinel').scrollIntoViewIfNeeded();
@@ -104,7 +104,7 @@ async function main() {
       await page.locator('[data-state="empty"]').waitFor();
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(origin + '/dishes?mode=fulltext&q=ceremonial+vani');
-      await count(10);
+      await count(12);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       await page.screenshot({ path: path.join(output, 'fulltext-mobile.png'), fullPage: true });
     });
@@ -113,7 +113,7 @@ async function main() {
       await db.query('INSERT INTO dishes (name,description,price,category,available) VALUES ($1,NULL,40000,$2,true)', ['Houjicha Roasted Whisk', 'houjicha']);
       await page.setViewportSize({ width: 1440, height: 1000 });
       await page.goto(origin + '/dishes');
-      await count(10);
+      await count(12);
       assert.equal(await page.locator('#menu-mode').inputValue(), 'smart');
       for (const q of ['houjicha whisk', 'houjcha whsk', 'houjcha whsik']) {
         await page.getByRole('searchbox').fill(q);
@@ -124,21 +124,16 @@ async function main() {
       }
       await page.getByRole('searchbox').fill('');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
-      await count(10);
+      await count(12);
       assert.equal(await page.locator('[data-state="error"]').count(), 0);
       assert.equal(new URL(page.url()).searchParams.has('sort'), false);
-      await page.locator('#menu-pageSize').selectOption('10');
-      await page.goto(origin + '/dishes?q=houjcha+whsk&pageSize=1');
-      await count(1);
-      await page.getByRole('link', { name: 'Trang 2', exact: true }).click();
-      await count(1);
-      assert.match(await page.locator('.dish-card').innerText(), /Houjicha Roasted Whisk/);
+      await page.locator('#menu-pageSize').selectOption('12');
+      await page.goto(origin + '/dishes?q=houjcha+whsk&pageSize=12');
+      await count(2);
       await page.reload();
-      await count(1);
+      await count(2);
       assert.equal(await page.locator('#menu-mode').inputValue(), 'smart');
       await page.locator('[data-view=more]').click();
-      await count(1);
-      await page.locator('[data-load-next]').click();
       await count(2);
       assert.equal(await page.locator('[data-load-next]').isDisabled(), true);
       await page.locator('[data-view=infinite]').click();
@@ -155,6 +150,68 @@ async function main() {
       await page.locator('#menu-mode').selectOption('smart');
       await count(2);
       assert.equal(new URL(page.url()).searchParams.get('page'), '1');
+    });
+    await check('Vietnamese accents and edit distance distinguish Bánh bò from Cơm bò; rearranged letters are labeled suggestions', async () => {
+      await db.query('INSERT INTO dishes (name,price) VALUES ($1,15000),($2,40000)', ['Bánh bò', 'Cơm bò']);
+      await page.goto(origin + '/dishes?q=houcha');
+      await count(2);
+      assert.match(await page.locator('.dish-card').first().innerText(), /Houjicha Cold Whisk/);
+      await page.goto(origin + '/dishes?q=kswh&pageSize=12&view=more');
+      await count(2);
+      assert.match(await page.locator('.search-match-note').first().innerText(), /Gợi ý theo ký tự/);
+      assert.equal(await page.locator('[data-load-next]').isDisabled(), true);
+      for (const q of ['báh bì', 'bah bi', 'banh bo', 'bánh bò'.normalize('NFD')]) {
+        await page.getByRole('searchbox').fill(q);
+        await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
+        await count(1);
+        assert.equal(await page.locator('.dish-card h3').innerText(), 'Bánh bò');
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await page.screenshot({ path: path.join(output, 'smart-vietnamese-typo.png'), fullPage: true });
+    });
+    await check('chatma retrieves the entire Matcha collection despite chất/chai distractors, with correction shown across all pagination views', async () => {
+      for (let index = 0; index < 13; index++) await db.query('INSERT INTO dishes (name,price,category) VALUES ($1,30000,$2)', [`Matcha phiên bản ${index}`, 'matcha']);
+      await db.query('INSERT INTO dishes (name,price,category) VALUES ($1,30000,$2)', ['Matcha 100% nguyên chất', 'matcha']);
+      const distractor = (await db.query('INSERT INTO dishes (name,price,category) VALUES ($1,30000,$2) RETURNING id', ['Cà phê đóng chai', 'coffee'])).rows[0].id;
+      const expected = (await db.query("SELECT id FROM dishes WHERE fts @@ plainto_tsquery('simple','matcha') ORDER BY id")).rows.map((row) => String(row.id));
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto(origin + '/dishes?q=chatma&pageSize=12');
+      await count(12);
+      assert.match(await page.locator('[data-search-correction]').innerText(), /“matcha”/);
+      assert.match(await page.locator('.result-count').innerText(), new RegExp(`/ ${expected.length} món`));
+      assert.equal(await page.getByRole('searchbox').inputValue(), 'chatma');
+      const ids = [];
+      for (let current = 1; current <= Math.ceil(expected.length / 12); current++) {
+        await count(Math.min(12, expected.length - (current - 1) * 12));
+        ids.push(...await page.locator('.dish-card').evaluateAll((cards) => cards.map((card) => card.dataset.dishId)));
+        if (current < Math.ceil(expected.length / 12)) {
+          await page.getByRole('link', { name: 'Trang tiếp', exact: true }).click();
+          await page.waitForURL((url) => url.searchParams.get('page') === String(current + 1));
+        }
+      }
+      assert.equal(new Set(ids).size, expected.length);
+      assert.deepEqual(ids.sort((a, b) => Number(a) - Number(b)), expected);
+      assert.equal(ids.includes(String(distractor)), false);
+      for (const view of ['more', 'infinite']) {
+        await page.goto(origin + `/dishes?view=${view}&q=chatma&pageSize=12`);
+        await count(12);
+        let visible = 12;
+        while (visible < expected.length) {
+          if (view === 'more') await page.locator('[data-load-next]').click();
+          else await page.locator('.pagination-sentinel').scrollIntoViewIfNeeded();
+          visible = Math.min(visible + 12, expected.length);
+          await count(visible);
+        }
+        const appended = await page.locator('.dish-card').evaluateAll((cards) => cards.map((card) => card.dataset.dishId));
+        assert.deepEqual(appended.sort((a, b) => Number(a) - Number(b)), expected);
+        assert.equal(await page.locator('[data-load-next]').isDisabled(), true);
+        assert.match(await page.locator('[data-search-correction]').innerText(), /“matcha”/);
+      }
+      await page.getByRole('searchbox').fill('');
+      await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
+      await count(12);
+      assert.equal(await page.locator('[data-search-correction]').isVisible(), false);
     });
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(output, 'fulltext-browser.json'), JSON.stringify({ results, pageErrors: errors }, null, 2));

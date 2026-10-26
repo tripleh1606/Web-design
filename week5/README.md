@@ -138,15 +138,17 @@ Ngay trong form thêm/sửa món, bấm **Thêm dòng nguyên liệu**, chọn n
 
 Trang thực đơn có thanh chọn **Số trang / Tải thêm / Cuộn liên tục**. Cả ba lấy từng phần dữ liệu qua `/api/dishes/paged`; số trang thay danh sách, hai kiểu còn lại nối thêm. Có chọn số món mỗi lượt, lọc category/trạng thái/khoảng giá và sort tên/giá trên toàn bộ tập phù hợp tại server.
 
-- `/dishes?view=pages&page=2&pageSize=10`: Reload/copy link/Back giữ đúng trang và điều kiện.
-- `/dishes?view=more&pageSize=10`: Tải thêm theo nút; khi mở lại link bắt đầu từ page 1.
-- `/dishes?view=infinite&pageSize=10`: Cuộn gần cuối để tải tiếp; khi mở lại link bắt đầu từ page 1; có nút Tải thêm dự phòng.
+- `/dishes?view=pages&page=2&pageSize=12`: Reload/copy link/Back giữ đúng trang và điều kiện.
+- `/dishes?view=more&pageSize=12`: Tải thêm theo nút; khi mở lại link bắt đầu từ page 1.
+- `/dishes?view=infinite&pageSize=12`: Cuộn gần cuối để tải tiếp; khi mở lại link bắt đầu từ page 1; có nút Tải thêm dự phòng.
+
+UI mặc định 12 món/lượt, chọn 12 / 24 / 36 / 48 / 96 để khớp 4 món/hàng. Liên kết cũ có kích thước chưa phù hợp được làm tròn lên bội số 4, tối thiểu 12 và khởi động lại từ trang 1; filter/sort được giữ nguyên. API vẫn nhận 1–100 theo hợp đồng cũ.
 
 Đổi điều kiện hoặc kiểu xem bắt đầu lại từ đầu, không trộn response cũ. Tải tiếp lỗi giữ cards cũ và thử lại đúng trang. [Đối chiếu HTML bài giảng](./docs/doi-chieu-html-pagination.md). Kiểm tra riêng UI bằng `npm run test:pagination:browser`; ảnh và báo cáo tạo trong `tests/results/`.
 
 ## API contract
 
-**Tìm kiếm mặc định Thông minh · gần đúng:** `mode=smart` kết hợp full-text trên tên + mô tả với so khớp từng từ gần đúng trong tên. `houjicha whisk`, `houjcha whsk` và `houjcha whsik` đều tìm được **Houjicha Cold Whisk**; khớp đúng xếp trước khớp gần đúng. Có thể chọn riêng Theo tên (nguyên cụm) hoặc Full-text (đúng từ). Cả ba kiểu phân trang giữ mode và từ khóa. [Cách sử dụng, điểm tương đồng và giới hạn](./docs/full-text-search.md). `npm run test:fulltext:browser` kiểm tra UI bằng PostgreSQL cục bộ. Sau khi đổi backend, dừng `npm run dev` cũ và chạy lại.
+**Tìm kiếm mặc định Thông minh · gần đúng:** `mode=smart` kết hợp full-text với bỏ dấu tiếng Việt, Levenshtein và trigram trên từng từ. `houjicha whisk`, `houcha` và `houjcha whsik` tìm được **Houjicha Cold Whisk**; `kswh` là gợi ý ký tự yếu khi không có kết quả tốt hơn. Các ca `báh bì → Bánh bò` được kiểm tra trên database test riêng. Có thể chọn riêng Theo tên (nguyên cụm) hoặc Full-text (đúng từ). Cả ba kiểu phân trang giữ mode và từ khóa. [Cách sử dụng, điểm tương đồng và giới hạn](./docs/full-text-search.md). Sau khi pull code, chạy `npm run db:search-setup` để cài extension/helper rồi restart `npm run dev`. `npm run test:fulltext:browser` kiểm tra UI bằng PostgreSQL cục bộ.
 
 Week5 có thêm **`GET /api/dishes/paged?page=1&pageSize=10`** dùng chung cho UI số trang, Load More và Infinite Scroll. API phân trang tại database, trả `{ ok: true, data: { items, total, page, pageSize }, error: null }`; tối đa 100 món/trang. Hỗ trợ `q`, `category`, `minPrice`, `maxPrice`, `available`, `sort`, áp dụng trước phân trang. Contract và hướng dẫn tích hợp: [docs/pagination-api.md](./docs/pagination-api.md). Chạy `npm run test:pagination:live` để xác nhận từng trang trên Supabase mà không sửa dữ liệu.
 

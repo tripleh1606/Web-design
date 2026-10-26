@@ -10,6 +10,8 @@ GET /api/dishes/paged?page=1&pageSize=10
 
 Route tĩnh `/paged` được đăng ký trước `/api/dishes/:id`. Endpoint cũ `/api/dishes` tiếp tục trả mảng để các màn hình hiện có và trang quản trị hoạt động; UI phân trang mới cần gọi `/api/dishes/paged`.
 
+UI mặc định **12 món/lượt**, các lựa chọn **12 / 24 / 36 / 48 / 96** để khớp 4 cột. Kích thước tùy chỉnh hợp lệ từ URL được làm tròn lên bội số 4, tối thiểu 12 (ví dụ 10 → 12, 50 → 52); thay kích thước thì trở về trang 1 và giữ các bộ lọc. API tiếp tục nhận 1–100 và mặc định 10 khi không gửi tham số để giữ tương thích; frontend luôn gửi kích thước đã chọn.
+
 | Query | Mặc định | Quy tắc |
 | --- | --- | --- |
 | `page` | `1` | Số nguyên dương; giữ nguyên trang được yêu cầu kể cả vượt phạm vi |
@@ -21,7 +23,7 @@ Route tĩnh `/paged` được đăng ký trước `/api/dishes/:id`. Endpoint c�
 | `available` | Không lọc | Chỉ `true` hoặc `false` |
 | `sort` | `id-asc` khi không tìm thông minh; `relevance` ở fulltext hoặc smart có q | Basic: id/tên/giá tăng giảm. Fulltext chỉ nhận relevance. Smart có q cho phép relevance hoặc id/tên/giá, thêm id ASC khi bằng điểm |
 
-Chuỗi trắng ở điều kiện tùy chọn được bỏ qua. `page=`/`pageSize=` rỗng, số thập phân, ký hiệu mũ, giá trị lặp và query parameter không hỗ trợ đều là lỗi. Offset `(page - 1) * pageSize` tối đa 2147483647. Fulltext dùng PostgreSQL `simple`; Smart thêm so sánh từng từ bằng trigram và nhận diện đảo chữ liền kề. Chi tiết và giới hạn: [full-text-search.md](./full-text-search.md).
+Chuỗi trắng ở điều kiện tùy chọn được bỏ qua. `page=`/`pageSize=` rỗng, số thập phân, ký hiệu mũ, giá trị lặp và query parameter không hỗ trợ đều là lỗi. Offset `(page - 1) * pageSize` tối đa 2147483647. Fulltext dùng PostgreSQL `simple`; Smart bỏ dấu, so từng từ bằng Levenshtein/trigram và chỉ dùng gợi ý xáo trộn ký tự khi không có kết quả tốt hơn. Chi tiết và giới hạn: [full-text-search.md](./full-text-search.md).
 
 ```json
 {
@@ -37,6 +39,8 @@ Chuỗi trắng ở điều kiện tùy chọn được bỏ qua. `page=`/`pageS
 ```
 
 `total` là tổng số món thỏa **toàn bộ điều kiện**, không phải độ dài `items`. Trang vượt phạm vi trả thành công với `items: []`, không tự đổi sang trang cuối. Không có kết quả thì `total: 0`. Có thể tính `totalPages = Math.ceil(total / pageSize)` và kết thúc khi `items.length === 0 || page * pageSize >= total`, kể cả trang cuối đủ `pageSize` món.
+
+Ở Smart, `data.correctedQuery` là từ khóa được nhận diện khi token chưa tồn tại có một ứng viên hoán vị đầy đủ duy nhất (5–12 ký tự), ví dụ `chatma → matcha`. Backend tìm toàn bộ tập theo từ đã nhận diện trước khi COUNT/LIMIT; UI công bố việc này và vẫn giữ q gốc. Từ vựng nhận diện toàn cục, độc lập bộ lọc. Không tự thay token đã tồn tại hoặc có nhiều ứng viên. `matchType: corrected` phân biệt khớp này với full-text nguyên bản, fuzzy và gợi ý yếu.
 
 ## Cách frontend dùng chung API
 
@@ -56,7 +60,7 @@ Tải thêm/Cuộn liên tục có thể tải trước tối đa một trang k�
 
 Tất cả điều kiện được kết hợp bằng AND trước khi sắp xếp và phân trang. `COUNT` và phần `LIMIT/OFFSET` sử dụng cùng predicate trong một câu SQL và cùng snapshot, giảm số lượt giao tiếp Supabase. LEFT JOIN giữ total khi trang rỗng. `available=false` và giá 0 không bị coi là thiếu điều kiện. Giá/tên trùng nhau luôn có `id ASC` làm thứ tự phụ; mặc định là `id ASC`.
 
-Giá trị request được bind qua `Prisma.sql`. Basic dùng `LOWER(name) LIKE LOWER(pattern) ESCAPE '!'`, escape `%`, `_`, `!` theo nghĩa literal. Fulltext dùng `fts @@ plainto_tsquery('simple', q)` và `ts_rank` giảm dần, có GIN index. Smart xếp khớp full-text trước, sau đó tên gần đúng với từng từ khóa (trigram >= 0.3, có chặn độ dài và nhận diện đảo chữ). Cả ba được phân trang tại database, không tải toàn bộ món về Node để cắt mảng. SQLite dùng cho local/test basic; fulltext và smart có q yêu cầu PostgreSQL và sẽ báo rõ nếu provider không hỗ trợ.
+Giá trị request được bind qua `Prisma.sql`. Basic dùng `LOWER(name) LIKE LOWER(pattern) ESCAPE '!'`, escape `%`, `_`, `!` theo nghĩa literal. Fulltext dùng `fts @@ plainto_tsquery('simple', q)` và `ts_rank` giảm dần, có GIN index. Smart xếp khớp full-text trước, sau đó tên gần đúng với từng từ khóa (bỏ dấu, Levenshtein 1–2 thao tác hoặc trigram >= 0.3). Gợi ý ký tự yếu bị loại nếu còn khớp thông thường trong tập sau bộ lọc; COUNT và page cùng dùng tập cuối này. Cả ba được phân trang tại database, không tải toàn bộ món về Node để cắt mảng. SQLite dùng cho local/test basic; fulltext và smart có q yêu cầu PostgreSQL và sẽ báo rõ nếu provider không hỗ trợ.
 
 Thứ tự ổn định ngăn trùng/mất món khi dataset không đổi. Offset có thể dịch khi người khác thêm/xóa hoặc đổi giá/tên giữa các request. Đây là giới hạn được công bố của offset pagination; backend không cam kết snapshot chung cho toàn bộ một phiên cuộn.
 

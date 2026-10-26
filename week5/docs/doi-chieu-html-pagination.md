@@ -36,12 +36,12 @@ Không cần sửa thuật toán backend để có ba UI. Phần thiếu sau l�
 ## Cách mở ba UI
 
 ```text
-http://localhost:5173/dishes?view=pages&page=2&pageSize=10
-http://localhost:5173/dishes?view=more&pageSize=10
-http://localhost:5173/dishes?view=infinite&pageSize=10
+http://localhost:5173/dishes?view=pages&page=2&pageSize=12
+http://localhost:5173/dishes?view=more&pageSize=12
+http://localhost:5173/dishes?view=infinite&pageSize=12
 ```
 
-Thanh chọn kiểu xem nằm trên danh sách. Đổi kiểu xem giữ filter/sort và bắt đầu lại từ đầu. `pageSize` mặc định 10; có lựa chọn 10/20/50/100 và khôi phục được kích thước tùy chỉnh hợp lệ từ URL. Trong Infinite Scroll vẫn có nút Tải thêm cho thao tác bàn phím hoặc trường hợp browser không có observer.
+Thanh chọn kiểu xem nằm trên danh sách. Đổi kiểu xem giữ filter/sort và bắt đầu lại từ đầu. UI mặc định 12 món/lượt; có lựa chọn 12/24/36/48/96, đều chia hết cho 4 và tối thiểu 12. Kích thước tùy chỉnh hợp lệ từ URL được làm tròn lên bội số 4, tối thiểu 12, và hiển thị đúng trong select; đổi kích thước trở về trang 1, giữ điều kiện. API vẫn nhận 1–100 để giữ hợp đồng cũ. Trong Infinite Scroll vẫn có nút Tải thêm cho thao tác bàn phím hoặc trường hợp browser không có observer.
 
 ## Kiểm chứng và lỗi đã sửa
 
@@ -54,6 +54,6 @@ npm run test:pagination:live
 
 `pagination-browser.js` dùng database test riêng và Chrome thật để kiểm tra URL/Reload/copy link, phân trang không reload document, pending chống gửi trùng, retry cùng trang, response cũ, cuộn hết danh sách, tự lấp viewport ngắn và bố cục mobile. Ảnh và kết quả JSON nằm trong `tests/results/` (gitignored). `test:pagination:live` chỉ đọc Supabase.
 
-Lỗi phát hiện khi nối UI: URL `?view=infinite&pageSize=2` gửi đúng 2 món/lượt nhưng select ban đầu chỉ có 10/20/50/100 nên hiển thị nhầm 10. Đã thêm option tương ứng với pageSize hợp lệ từ URL. Kiểm tra browser vừa xác nhận select là `2`, vừa xác nhận các request liên tiếp có số trang không trùng. Đây cũng là tình huống kiểm tra sentinel còn trong viewport sau lượt đầu.
+Theo yêu cầu bố cục 4 cột, URL cũ có pageSize=10 được chuẩn hóa thành 12 và trở về trang 1, giữ các bộ lọc. Browser kiểm tra tất cả option đều chia hết cho 4, tối thiểu 12; đồng thời giữ được kích thước tùy chỉnh 16 từ URL. Viewport cao vẫn tự tải tuần tự nếu lượt đầu chưa lấp đầy, không gửi trùng trang.
 
 Phạm vi chính của tài liệu này là ba UI phân trang. Week5 có `mode=fulltext` tìm trên tên + mô tả và xếp hạng; UI mặc định `mode=smart` thêm chịu lỗi gõ trong tên món. Cả hai dùng được với ba UI; xem [full-text-search.md](./full-text-search.md). Các điều kiện category/giá/available kết hợp AND với tìm kiếm. Chưa có mode advanced riêng; không tuyên bố đã hoàn thành toàn bộ các chế độ search của bài giảng.

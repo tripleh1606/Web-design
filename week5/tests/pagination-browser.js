@@ -14,7 +14,7 @@ async function main() {
   fs.mkdirSync(output, { recursive: true });
   try {
     const generated = generateBeverages();
-    const sample = ['coffee', 'matcha', 'houjicha'].flatMap((category, index) => generated.filter((row) => row.category === category).slice(0, [20, 11, 8][index]));
+    const sample = ['coffee', 'matcha', 'houjicha'].flatMap((category, index) => generated.filter((row) => row.category === category).slice(0, [24, 13, 8][index]));
     sample[0] = { ...sample[0], price: 0, available: false };
     await app.prisma.dish.createMany({ data: sample });
     const records = await app.prisma.dish.findMany({ orderBy: { id: 'asc' } });
@@ -43,15 +43,25 @@ async function main() {
     }
     await check('Numbered pagination restores URL, reload, copied link and Back/Forward without document navigation', async () => {
       const expected = [...records].sort((a, b) => a.price - b.price || a.id - b.id);
+      await page.goto(origin + '/dishes');
+      await count(12);
+      assert.equal(await page.locator('#menu-pageSize').inputValue(), '12');
+      const sizes = await page.locator('#menu-pageSize option').evaluateAll((options) => options.map((option) => Number(option.value)));
+      assert.ok(sizes.every((size) => size >= 12 && size % 4 === 0));
+      await page.goto(origin + '/dishes?page=3&pageSize=10&category=coffee');
+      await count(12);
+      assert.equal(new URL(page.url()).searchParams.get('pageSize'), '12');
+      assert.equal(new URL(page.url()).searchParams.get('page'), '1');
+      assert.equal(new URL(page.url()).searchParams.get('category'), 'coffee');
       // Keep name-search semantics in this SQLite suite; smart search is covered on PostgreSQL.
-      await page.goto(origin + '/dishes?mode=basic&view=pages&page=2&pageSize=10&sort=price-asc');
-      await count(10);
-      assert.deepEqual(await ids(), expected.slice(10, 20).map((row) => row.id));
-      assert.match(await page.locator('.result-count').innerText(), /11–20 \/ 39/);
+      await page.goto(origin + '/dishes?mode=basic&view=pages&page=2&pageSize=12&sort=price-asc');
+      await count(12);
+      assert.deepEqual(await ids(), expected.slice(12, 24).map((row) => row.id));
+      assert.match(await page.locator('.result-count').innerText(), /13–24 \/ 45/);
       assert.equal(await page.locator('.numbered-pagination [aria-current="page"]').innerText(), '2');
       await page.reload();
-      await count(10);
-      assert.deepEqual(await ids(), expected.slice(10, 20).map((row) => row.id));
+      await count(12);
+      assert.deepEqual(await ids(), expected.slice(12, 24).map((row) => row.id));
       const copy = await context.newPage();
       await copy.goto(page.url());
       await copy.waitForFunction(() => document.querySelector('[data-menu-grid]')?.getAttribute('aria-busy') === 'false');
@@ -60,30 +70,30 @@ async function main() {
       const docs = documents.length;
       await page.getByRole('link', { name: 'Trang 3', exact: true }).click();
       await page.waitForURL(/page=3/);
-      await count(10);
-      assert.deepEqual(await ids(), expected.slice(20, 30).map((row) => row.id));
+      await count(12);
+      assert.deepEqual(await ids(), expected.slice(24, 36).map((row) => row.id));
       await page.goBack();
-      await count(10);
-      assert.deepEqual(await ids(), expected.slice(10, 20).map((row) => row.id));
+      await count(12);
+      assert.deepEqual(await ids(), expected.slice(12, 24).map((row) => row.id));
       await page.goForward();
-      await count(10);
-      assert.deepEqual(await ids(), expected.slice(20, 30).map((row) => row.id));
+      await count(12);
+      assert.deepEqual(await ids(), expected.slice(24, 36).map((row) => row.id));
       assert.equal(documents.length, docs);
       await page.screenshot({ path: path.join(output, 'pagination-numbered-desktop.png'), fullPage: true });
     });
     await check('Search/filter/sort reset page one, preserve conditions, and handle false and zero', async () => {
       await page.getByRole('searchbox').fill('Matcha');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
-      await count(10);
+      await count(12);
       assert.equal(new URL(page.url()).searchParams.get('page'), '1');
       await page.getByRole('link', { name: 'Trang 2', exact: true }).click();
       await count(1);
       assert.equal(new URL(page.url()).searchParams.get('q'), 'Matcha');
       await page.locator('#menu-sort').selectOption('name-desc');
-      await count(10);
+      await count(12);
       assert.equal(new URL(page.url()).searchParams.get('page'), '1');
       await page.getByRole('link', { name: 'Xóa bộ lọc' }).click();
-      await count(10);
+      await count(12);
       await page.locator('#menu-minPrice').fill('0');
       await page.locator('#menu-maxPrice').fill('0');
       await page.locator('#menu-available').selectOption('false');
@@ -105,23 +115,23 @@ async function main() {
         try { await route.continue(); } catch { /* canceled on navigation */ }
       });
       const second = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/dishes/paged' && new URL(request.url()).searchParams.get('page') === '2');
-      await page.goto(origin + '/dishes?view=more&category=coffee&pageSize=10');
-      await count(10);
+      await page.goto(origin + '/dishes?view=more&category=coffee&pageSize=12');
+      await count(12);
       const docs = documents.length;
       await page.locator('[data-load-next]').click();
       await second;
       assert.equal(await page.locator('[data-load-next]').isDisabled(), true);
       await page.locator('[data-load-next]').evaluate((button) => button.dispatchEvent(new MouseEvent('click', { bubbles: true })));
       release();
-      await count(20);
+      await count(24);
       assert.equal(requests, 1);
-      assert.equal(new Set(await ids()).size, 20);
+      assert.equal(new Set(await ids()).size, 24);
       assert.equal(await page.locator('[data-load-next]').isDisabled(), true);
       assert.equal(await page.locator('.pagination-end').count(), 1);
       assert.equal(documents.length, docs);
       await page.unroute('**/api/dishes/paged?**');
       await page.reload();
-      await count(10);
+      await count(12);
       assert.match(await page.locator('.pagination-policy:not(.fulltext-hint)').innerText(), /tải từ đầu/);
     });
     await check('A failed next page preserves cards and retries exactly that page', async () => {
@@ -134,8 +144,8 @@ async function main() {
         }
         return route.continue();
       });
-      await page.goto(origin + '/dishes?view=more&pageSize=10');
-      await count(10);
+      await page.goto(origin + '/dishes?view=more&pageSize=12');
+      await count(12);
       const firstIds = await ids();
       await page.locator('[data-load-next]').click();
       await page.locator('[data-state="error"]').waitFor();
@@ -143,9 +153,9 @@ async function main() {
       assert.equal(await page.locator('[data-load-next]').innerText(), 'Thử tải lại');
       allowSuccess = true;
       await page.locator('[data-load-next]').click();
-      await count(20);
+      await count(24);
       assert.ok(attempts >= 2);
-      assert.deepEqual((await ids()).slice(0, 10), firstIds);
+      assert.deepEqual((await ids()).slice(0, 12), firstIds);
       await page.unroute('**/api/dishes/paged?**');
     });
     await check('Changing criteria aborts stale append responses instead of mixing two result sets', async () => {
@@ -156,8 +166,8 @@ async function main() {
         try { await route.continue(); } catch { /* deliberately canceled */ }
       });
       const pending = page.waitForRequest((request) => request.url().includes('/paged?') && new URL(request.url()).searchParams.get('page') === '2');
-      await page.goto(origin + '/dishes?view=more&pageSize=10');
-      await count(10);
+      await page.goto(origin + '/dishes?view=more&pageSize=12');
+      await count(12);
       await page.locator('[data-load-next]').click();
       await pending;
       await page.locator('#menu-category').selectOption('houjicha');
@@ -169,15 +179,15 @@ async function main() {
     });
     await check('Infinite Scroll loads all pages without duplicate IDs and disconnects on route exit', async () => {
       const start = network.length;
-      await page.goto(origin + '/dishes?view=infinite&pageSize=10');
-      await count(10);
-      while (await page.locator('.dish-card').count() < 39) {
+      await page.goto(origin + '/dishes?view=infinite&pageSize=12');
+      await count(12);
+      while (await page.locator('.dish-card').count() < 45) {
         const before = await page.locator('.dish-card').count();
         await page.locator('.pagination-sentinel').scrollIntoViewIfNeeded();
         await page.waitForFunction((before) => document.querySelectorAll('.dish-card').length > before && document.querySelector('[data-menu-grid]')?.getAttribute('aria-busy') === 'false', before);
       }
       assert.deepEqual(await ids(), records.map((row) => row.id));
-      assert.equal(new Set(await ids()).size, 39);
+      assert.equal(new Set(await ids()).size, 45);
       assert.equal(await page.locator('[data-load-next]').isDisabled(), true);
       const pages = network.slice(start).map((url) => url.searchParams.get('page'));
       assert.deepEqual(pages, ['1', '2', '3', '4']);
@@ -189,29 +199,29 @@ async function main() {
       assert.equal(network.length, calls);
     });
     await check('Short lists auto-fill the viewport sequentially and custom pageSize survives URL restore', async () => {
-      await page.setViewportSize({ width: 1440, height: 2200 });
+      await page.setViewportSize({ width: 1440, height: 3000 });
       const start = network.length;
-      await page.goto(origin + '/dishes?view=infinite&pageSize=2');
-      await page.waitForFunction(() => document.querySelectorAll('.dish-card').length > 2 && document.querySelector('[data-menu-grid]')?.getAttribute('aria-busy') === 'false' &&
+      await page.goto(origin + '/dishes?view=infinite&pageSize=16');
+      await page.waitForFunction(() => document.querySelectorAll('.dish-card').length > 16 && document.querySelector('[data-menu-grid]')?.getAttribute('aria-busy') === 'false' &&
         (document.querySelector('.pagination-sentinel').getBoundingClientRect().top > innerHeight + 200 || document.querySelector('[data-load-next]')?.disabled));
-      assert.equal(await page.locator('#menu-pageSize').inputValue(), '2');
+      assert.equal(await page.locator('#menu-pageSize').inputValue(), '16');
       const pages = network.slice(start).map((url) => url.searchParams.get('page'));
       assert.equal(pages[0], '1');
       assert.equal(new Set(pages).size, pages.length);
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(origin + '/dishes?view=pages&pageSize=10');
-      await count(10);
+      await page.goto(origin + '/dishes?view=pages&pageSize=12');
+      await count(12);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       await page.screenshot({ path: path.join(output, 'pagination-mobile.png'), fullPage: true });
     });
     await check('Empty/out-of-range/invalid pages are visible and clear/reset controls recover', async () => {
-      await page.goto(origin + '/dishes?page=99&pageSize=10');
+      await page.goto(origin + '/dishes?page=99&pageSize=12');
       await ready();
       assert.match(await page.locator('[data-state="empty"]').innerText(), /Trang này chưa có món/);
       await page.getByRole('link', { name: 'Về trang đầu' }).click();
-      await count(10);
+      await count(12);
       await page.locator('#menu-mode').selectOption('basic');
-      await count(10);
+      await count(12);
       await page.getByRole('searchbox').fill('no-match-here');
       await page.getByRole('button', { name: 'Tìm món', exact: true }).click();
       await ready();
@@ -233,8 +243,8 @@ async function main() {
         try { await route.continue(); } catch { /* menu navigation may cancel prefetch */ }
       });
       const prefetched = page.waitForResponse((response) => response.url().includes('/paged?') && new URL(response.url()).searchParams.get('page') === '2');
-      await page.goto(origin + '/dishes?view=more&pageSize=10');
-      await count(10);
+      await page.goto(origin + '/dishes?view=more&pageSize=12');
+      await count(12);
       await (await prefetched).finished();
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const button = await page.locator('[data-load-next]').elementHandle();
@@ -245,7 +255,7 @@ async function main() {
         let started;
         window.__appendLatency = undefined;
         const observer = new MutationObserver(() => {
-          if (started !== undefined && document.querySelectorAll('.dish-card').length === 20) {
+          if (started !== undefined && document.querySelectorAll('.dish-card').length === 24) {
             window.__appendLatency = performance.now() - started;
             observer.disconnect();
           }
@@ -254,7 +264,7 @@ async function main() {
         document.querySelector('[data-load-next]').addEventListener('click', () => { started = performance.now(); }, { capture: true, once: true });
       });
       await page.locator('[data-load-next]').click();
-      await count(20);
+      await count(24);
       const elapsed = await page.evaluate(() => window.__appendLatency);
       assert.ok(elapsed < 300, `ready page took ${elapsed}ms to display`);
       assert.equal(secondRequests, 1);

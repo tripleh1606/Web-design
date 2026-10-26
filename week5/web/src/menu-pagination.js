@@ -35,7 +35,18 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     url.searchParams.delete('page');
     history.replaceState({}, '', url.pathname + url.search);
   }
-  const pageSize = url.searchParams.get('pageSize') || '10';
+  const requestedSize = url.searchParams.get('pageSize')?.trim();
+  let pageSize = requestedSize || '12';
+  // Align old valid API-sized links with the four-column menu. Invalid values
+  // still reach API validation; changing a valid size restarts numbered pages.
+  if (requestedSize && /^\d+$/.test(requestedSize) && Number(requestedSize) >= 1 && Number(requestedSize) <= 100) {
+    pageSize = String(Math.max(12, Math.ceil(Number(requestedSize) / 4) * 4));
+    if (pageSize !== requestedSize) {
+      url.searchParams.set('pageSize', pageSize);
+      if (view === 'pages') url.searchParams.set('page', '1');
+      history.replaceState({}, '', url.pathname + url.search);
+    }
+  }
   const initialPage = view === 'pages' ? url.searchParams.get('page') || '1' : '1';
   const applied = Object.fromEntries(FILTER_KEYS.map((key) => [key, url.searchParams.get(key) || '']));
   applied.mode ||= 'smart';
@@ -59,11 +70,12 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
   const available = select('menu-available', [['', 'Tất cả trạng thái'], ['true', 'Đang phục vụ'], ['false', 'Tạm hết']], applied.available, submit);
   const minPrice = el('input', { id: 'menu-minPrice', name: 'minPrice', type: 'number', min: 0, max: 2147483647, step: 1, value: applied.minPrice, placeholder: 'Không giới hạn' });
   const maxPrice = el('input', { id: 'menu-maxPrice', name: 'maxPrice', type: 'number', min: 0, max: 2147483647, step: 1, value: applied.maxPrice, placeholder: 'Không giới hạn' });
-  const sizeChoices = [...new Set(['10', '20', '50', '100', ...(/^\d+$/.test(pageSize) && Number(pageSize) >= 1 && Number(pageSize) <= 100 ? [pageSize] : [])])].sort((a, b) => Number(a) - Number(b));
+  const sizeChoices = [...new Set(['12', '24', '36', '48', '96', ...(/^\d+$/.test(pageSize) && Number(pageSize) >= 12 && Number(pageSize) <= 100 && Number(pageSize) % 4 === 0 ? [pageSize] : [])])].sort((a, b) => Number(a) - Number(b));
   const sizeSelect = select('menu-pageSize', sizeChoices.map((size) => [size, `${size} món`]), pageSize,
     () => navigate(menuUrl(url, { pageSize: sizeSelect.value }, { reset: true })));
   const field = (id, label, input) => el('div', { className: 'menu-filter-field' }, el('label', { htmlFor: id }, label), input);
   const count = el('p', { className: 'result-count', role: 'status', 'aria-live': 'polite' }, 'Đang tìm món cho bạn…');
+  const correction = el('p', { className: 'pagination-policy fulltext-hint', 'data-search-correction': '', role: 'status', hidden: true });
   const progress = el('span', { className: 'menu-progress-text' });
   const meter = el('progress', { className: 'menu-progress', max: 1, value: 0, 'aria-label': 'Số món đã xem trên tổng kết quả' });
   const resultHeader = el('div', { className: 'menu-result-heading' }, count, el('div', { className: 'menu-progress-wrap' }, progress, meter));
@@ -71,7 +83,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
   const message = el('div', { className: 'menu-message' });
   const controls = el('div', { className: 'pagination-controls' });
   const sentinel = el('div', { className: 'pagination-sentinel', 'aria-hidden': 'true' });
-  const result = el('div', { className: 'menu-results', 'data-pagination-view': view }, resultHeader, grid, message, sentinel, controls);
+  const result = el('div', { className: 'menu-results', 'data-pagination-view': view }, resultHeader, correction, grid, message, sentinel, controls);
   const modeNav = el('nav', { className: 'pagination-modes', 'aria-label': 'Cách hiển thị danh sách' }, VIEWS.map(([key, label, number]) => {
     const anchor = link(menuUrl(url, { view: key }, { reset: true }), '', key === view ? 'active' : '');
     anchor.setAttribute('aria-current', key === view ? 'page' : 'false');
@@ -94,7 +106,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
       el('div', { className: 'section-heading' }, el('h2', {}, 'Thực đơn nhà Soucha'), el('span', {}, 'Một lựa chọn, một chút bình yên')),
       form, el('div', { className: 'pagination-toolbar' }, modeNav, field('menu-pageSize', 'Mỗi lượt', sizeSelect)),
       ...(fulltext ? [el('p', { className: 'pagination-policy fulltext-hint' }, 'Full-text tìm theo các từ trong tên và mô tả, ưu tiên kết quả liên quan nhất. Nhập từ có dấu để khớp chính xác hơn.')] : []),
-      ...(smart ? [el('p', { className: 'pagination-policy fulltext-hint' }, 'Tìm theo từ trong tên và mô tả, không cần viết liền nhau. Chấp nhận lỗi gõ gần đúng trong tên món; ưu tiên khớp đúng rồi đến độ tương đồng.')] : []),
+      ...(smart ? [el('p', { className: 'pagination-policy fulltext-hint' }, 'Tìm theo từ, chấp nhận thiếu dấu và lỗi gõ trong tên món. Ưu tiên khớp đúng; gợi ý do xáo trộn ký tự được đánh dấu riêng khi không có kết quả tốt hơn.')] : []),
       el('p', { className: 'pagination-policy' }, view === 'pages'
         ? 'Chọn một trang để khám phá. Mở lại liên kết sẽ giữ đúng trang và bộ lọc của bạn.'
         : `${view === 'more' ? 'Bấm Tải thêm' : 'Cuộn gần cuối danh sách'} để khám phá tiếp. Mở lại liên kết sẽ tải từ đầu với cùng bộ lọc.`), result));
@@ -118,6 +130,8 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
   function updateCount() {
     if (!metadata) return;
     const { total, page: current, pageSize: size } = metadata;
+    correction.hidden = !metadata.correctedQuery;
+    correction.textContent = metadata.correctedQuery ? `Hiển thị kết quả cho “${metadata.correctedQuery}” · từ khóa bạn nhập: “${applied.q}”.` : '';
     const start = total && seen.size ? view === 'pages' ? (current - 1) * size + 1 : 1 : 0;
     const finish = total && seen.size ? view === 'pages' ? (current - 1) * size + seen.size : seen.size : 0;
     count.textContent = `${start}–${finish} / ${total} món${applied.q ? ` · “${applied.q}”` : ''}`;
@@ -192,6 +206,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
         const card = renderCard(record);
         card.dataset.dishId = record.id;
         if (record.matchType === 'fuzzy') card.append(el('span', { className: 'search-match-note' }, 'Tên gần với từ khóa'));
+        if (record.matchType === 'suggestion') card.append(el('span', { className: 'search-match-note' }, 'Gợi ý theo ký tự · khớp yếu'));
         fragment.append(card);
       }
       grid.append(fragment);

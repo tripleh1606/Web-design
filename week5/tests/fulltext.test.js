@@ -87,6 +87,76 @@ test('smart search tolerates missing middle words, per-word typos and transposit
     assert.ok(ranked.items[0].rank > ranked.items[1].rank, 'exact word matches rank above fuzzy matches');
     await db.query('UPDATE dishes SET name=$1 WHERE id=13', ['Houjicha Daily Whisk']);
     assert.equal((await get({ q: 'houjicha whisk' })).items.find((row) => row.id === 13).matchType, 'fulltext');
+    for (const q of ['houcha', 'houcha whisk']) {
+      const result = await get({ q });
+      assert.ok(result.items.some((row) => row.id === 11), q);
+      assert.ok(result.items.every((row) => row.matchType !== 'suggestion'), q);
+    }
+    for (const q of ['kswh', 'houcha kswh']) {
+      const all = await get({ q, pageSize: 100 });
+      assert.ok(all.items.some((row) => row.id === 11), q);
+      const result = await get({ q, pageSize: 1 });
+      assert.ok(result.total >= 3, q);
+      assert.equal(result.items[0].id, all.items[0].id, q);
+      assert.equal(result.items[0].matchType, 'suggestion', q);
+      const next = await get({ q, pageSize: 1, page: 2 });
+      assert.equal(next.total, result.total);
+      assert.notEqual(next.items[0].id, result.items[0].id);
+    }
+    for (const q of ['kswh zzzzz', 'kkww', 'bi']) assert.equal((await get({ q })).total, 0, q);
+    await db.query('INSERT INTO dishes (id,name,price) VALUES (31,$1,15000),(32,$2,40000)', ['Bánh bò', 'Cơm bò']);
+    for (const q of ['báh bì', 'bah bi', 'banh bo', 'BÁNH BÒ', 'bánh bò'.normalize('NFD')]) {
+      assert.deepEqual((await get({ q })).items.map((row) => row.id), [31], q);
+    }
+    assert.deepEqual((await get({ q: 'com bo' })).items.map((row) => row.id), [32]);
+    // Weak rearrangements must not compete with ordinary or exact matches.
+    await db.query('INSERT INTO dishes (id,name,price,available) VALUES (45,$1,10000,true)', ['Kswh']);
+    assert.deepEqual((await get({ q: 'kswh' })).items.map((row) => row.id), [45]);
+    const filteredSuggestion = await get({ q: 'kswh', available: false });
+    assert.deepEqual(filteredSuggestion.items.map((row) => row.id), [12]);
+    assert.equal(filteredSuggestion.items[0].matchType, 'suggestion');
+    // A misleading strong match (chai/chất) must not suppress the entire Matcha family.
+    const matchaIds = [];
+    for (let index = 0; index < 13; index++) {
+      const id = 100 + index;
+      matchaIds.push(id);
+      await db.query('INSERT INTO dishes (id,name,price,category,available) VALUES ($1,$2,$3,$4,$5)',
+        [id, `Matcha Latte ${index}`, index * 1000, 'matcha', index % 2 === 0]);
+    }
+    await db.query('INSERT INTO dishes (id,name,price,category) VALUES (120,$1,30000,$2)', ['Matcha 100% nguyên chất', 'matcha']);
+    matchaIds.push(120);
+    await db.query('INSERT INTO dishes (id,name,price,category) VALUES (121,$1,30000,$2)', ['Cà phê đóng chai', 'coffee']);
+    await db.query('INSERT INTO dishes (id,name,description,price,category) VALUES (122,$1,$2,30000,$3)', ['Latte', 'Pha cùng Matcha.', 'coffee']);
+    for (const q of ['chatma', 'tacmah']) {
+      const ids = [];
+      const baseline = await get({ q: 'matcha', pageSize: 100 });
+      for (let page = 1; ; page++) {
+        const result = await get({ q, page, pageSize: 5 });
+        assert.equal(result.correctedQuery, 'matcha');
+        assert.equal(result.total, baseline.total);
+        ids.push(...result.items.map((row) => row.id));
+        assert.ok(result.items.every((row) => !Object.hasOwn(row, '__correctedQuery')));
+        if (page * 5 >= result.total) break;
+      }
+      assert.equal(new Set(ids).size, baseline.total, q);
+      assert.deepEqual(ids, baseline.items.map((row) => row.id), q);
+      for (const id of matchaIds) assert.ok(ids.includes(id), `${q}: missing Matcha ${id}`);
+      assert.ok(ids.includes(122), 'corrected fulltext includes description-only matches');
+      assert.equal(ids.includes(121), false, 'chai is not a correction for chatma');
+    }
+    const filteredCorrection = await get({ q: 'chatma', category: 'matcha', available: false, minPrice: 0, maxPrice: 4000 });
+    assert.deepEqual(filteredCorrection.items.map((row) => row.id), [101, 103]);
+    const descriptionCorrection = await get({ q: 'chatma', category: 'coffee' });
+    assert.equal(descriptionCorrection.correctedQuery, 'matcha', 'filters must not change how the word is interpreted');
+    assert.deepEqual(descriptionCorrection.items.map((row) => row.id), [122]);
+    const beyondCorrection = await get({ q: 'chatma', page: 100 });
+    assert.equal(beyondCorrection.correctedQuery, 'matcha');
+    assert.deepEqual(beyondCorrection.items, []);
+    assert.equal((await get({ q: 'chatma zzzzz' })).total, 0);
+    await db.query('INSERT INTO dishes (id,name,price) VALUES (123,$1,20000)', ['Chatma']);
+    const literal = await get({ q: 'chatma', pageSize: 100 });
+    assert.equal(literal.correctedQuery, undefined, 'never replace an actual dictionary word');
+    assert.equal(literal.items[0].id, 123);
   } finally {
     if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
     await db.close();

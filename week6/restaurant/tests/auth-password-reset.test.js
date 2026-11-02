@@ -15,6 +15,7 @@ async function fixture(fn) {
   const defaultUser = {
     id: nextUserId++,
     email: 'user@example.com',
+    status: 'active',
     passwordHash: await hashPassword('password123'),
     emailVerifiedAt: new Date()
   };
@@ -24,6 +25,7 @@ async function fixture(fn) {
   const pendingUser = {
     id: nextUserId++,
     email: 'pending@example.com',
+    status: 'pending',
     passwordHash: await hashPassword('pending123'),
     emailVerifiedAt: null
   };
@@ -353,7 +355,7 @@ test('F04: POST /reset updates passwordHash, marks usedAt, invalidates other tok
   assert.ok(tokens[0].usedAt instanceof Date);
 
   // Verify all user sessions were deleted
-  assert.equal(sessions.size, 0);
+  assert.equal([...sessions.values()].filter(s => s.userId !== null).length, 0);
 
   // Verify notice email sent
   await new Promise(r => setTimeout(r, 50));

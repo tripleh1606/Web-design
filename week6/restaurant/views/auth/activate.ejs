@@ -1,0 +1,25 @@
+<%- include('../partials/header', { title }) %>
+<section class="admin-content">
+  <h1>Kích hoạt tài khoản</h1>
+  <% if (notice) { %><p role="status"><%= notice %></p><% } %>
+  <% if (error) { %><p class="auth-error-code" data-error-code="<%= error.code %>"><%= error.code %></p><% } %>
+  <% Object.values(errors).forEach(message => { %><p class="form-alert" role="alert"><%= message %></p><% }) %>
+  <% if (activated) { %>
+    <p><a href="/login">Đăng nhập</a></p>
+  <% } else { %>
+    <form method="POST" action="/activate" class="form-card">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label>Email <input type="email" name="email" maxlength="254" value="<%= values.email %>" autocomplete="email" required></label>
+      <label>Mã OTP 6 chữ số <input type="text" name="otp" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" required></label>
+      <button type="submit">Kích hoạt</button>
+    </form>
+    <form method="POST" action="/activate/resend" class="form-card">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label>Email nhận mã mới <input type="email" name="email" maxlength="254" value="<%= values.email %>" autocomplete="email" required></label>
+      <button type="submit">Gửi lại mã OTP</button>
+    </form>
+    <p>Mã có hạn dùng. Gửi lại mã không xóa số lần nhập sai hoặc thời gian khóa.</p>
+    <p><a href="/login">Đăng nhập</a> · <a href="/register">Đăng ký</a></p>
+  <% } %>
+</section>
+<%- include('../partials/footer') %>

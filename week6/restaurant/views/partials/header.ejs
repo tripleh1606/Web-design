@@ -11,6 +11,6 @@
   <div class="site-shell">
     <header class="site-header">
       <a class="brand-link" href="/dishes" aria-label="Soucha, về thực đơn"><img src="/logo_and_name_sameline.svg" alt="Soucha"></a>
-      <nav class="header-nav" aria-label="Điều hướng chính"><a href="/dishes">Thực đơn</a><% if (currentUser) { %><a href="/admin/dishes">Quản lý</a><span><%= currentUser.email %></span><form method="POST" action="/auth/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit">Đăng xuất</button></form><% } else { %><a href="/auth/login">Đăng nhập</a><a href="/auth/register">Đăng ký</a><% } %></nav>
+      <nav class="header-nav" aria-label="Điều hướng chính"><a href="/dishes">Thực đơn</a><% if (currentUser) { %><a href="/admin/dishes">Quản lý</a><span><%= currentUser.email %></span><form method="POST" action="/auth/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit">Đăng xuất</button></form><% } else { %><a href="/login">Đăng nhập</a><a href="/register">Đăng ký</a><% } %></nav>
     </header>
     <main>

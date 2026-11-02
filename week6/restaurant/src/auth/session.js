@@ -1,9 +1,12 @@
+const { lockDatabaseWrite } = require('./database-lock');
 const express = require('express');
 const crypto = require('node:crypto');
+const argon2 = require('argon2');
+const { normalizeEmail, validEmail, hashPassword } = require('./credentials');
+const { createRecaptchaVerifier } = require('./captcha');
 const { promisify } = require('node:util');
 const scrypt = promisify(crypto.scrypt);
 const TOKEN = /^[a-f0-9]{64}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DUMMY_HASH = `scrypt$${'00'.repeat(16)}$${'00'.repeat(64)}`;
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -17,12 +20,16 @@ function resolveAuthConfig(overrides = {}) {
     if (!Number.isSafeInteger(n) || n <= 0 || (overrides[key] === undefined && process.env[env] !== undefined && !Number.isInteger(Number(process.env[env])))) throw new Error(`Invalid ${env}`);
     return n;
   }
-  return { appBaseUrl: url.origin, sessionCookieName: overrides.sessionCookieName ?? process.env.SESSION_COOKIE_NAME ?? 'soucha_session', csrfCookieName: overrides.csrfCookieName ?? 'soucha_csrf', sessionTtlMs: ttl('sessionTtlMs', 'SESSION_TTL_HOURS'), emailVerifyTtlMs: ttl('emailVerifyTtlMs', 'EMAIL_VERIFY_TTL_HOURS'), cookieSecure: overrides.cookieSecure ?? (production || url.protocol === 'https:'), recaptchaSiteKey: overrides.recaptchaSiteKey ?? process.env.RECAPTCHA_SITE_KEY ?? '', recaptchaSecretKey: overrides.recaptchaSecretKey ?? process.env.RECAPTCHA_SECRET_KEY ?? '' };
+  return { appBaseUrl: url.origin, sessionCookieName: overrides.sessionCookieName ?? process.env.SESSION_COOKIE_NAME ?? 'soucha_session', csrfCookieName: overrides.csrfCookieName ?? 'soucha_csrf', sessionTtlMs: ttl('sessionTtlMs', 'SESSION_TTL_HOURS'), anonymousTtlMs: 1800000, registration: overrides.registration, cookieSecure: overrides.cookieSecure ?? (production || url.protocol === 'https:'), recaptchaSiteKey: overrides.recaptchaSiteKey ?? process.env.RECAPTCHA_SITE_KEY ?? '', recaptchaSecretKey: overrides.recaptchaSecretKey ?? process.env.RECAPTCHA_SECRET_KEY ?? '' };
 }
 
-const normalizeEmail = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
-async function hashPassword(password) { const salt = crypto.randomBytes(16); const key = await scrypt(password, salt, 64); return `scrypt$${salt.toString('hex')}$${key.toString('hex')}`; }
-async function verifyPassword(password, hash) { if (typeof hash !== 'string' || !/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(hash)) return false; const [, salt, key] = hash.split('$'); const actual = await scrypt(password, Buffer.from(salt, 'hex'), 64); return crypto.timingSafeEqual(actual, Buffer.from(key, 'hex')); }
+async function verifyPassword(password, hash) {
+  if (typeof hash === 'string' && hash.startsWith('$argon2id$')) return argon2.verify(hash, password);
+  // Existing accounts can still verify their legacy scrypt hash. New writes use Argon2id.
+  if (typeof hash !== 'string' || !/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(hash)) return false;
+  const [, salt, key] = hash.split('$'), actual = await scrypt(password, Buffer.from(salt, 'hex'), 64);
+  return crypto.timingSafeEqual(actual, Buffer.from(key, 'hex'));
+}
 const generateRawToken = () => crypto.randomBytes(32).toString('hex');
 const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
 const safeEqualToken = (a, b) => typeof a === 'string' && typeof b === 'string' && TOKEN.test(a) && TOKEN.test(b) && crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
@@ -45,7 +52,7 @@ function attachSessionMiddleware({ prisma, authConfig }) {
     if (raw !== undefined) {
       if (TOKEN.test(raw)) {
         const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(raw) }, include: { user: true } });
-        if (session && session.expiresAt > new Date() && session.user.emailVerifiedAt) {
+        if (session && session.expiresAt > new Date() && session.user?.status === 'active' && session.user.emailVerifiedAt) {
           req.auth = { user: session.user, session, rawToken: raw };
           res.locals.currentUser = { id: session.user.id, email: session.user.email };
           res.locals.csrfToken = session.csrfToken;
@@ -55,13 +62,20 @@ function attachSessionMiddleware({ prisma, authConfig }) {
         }
       } else clearSessionCookie(res, authConfig);
     }
-    if (!req.auth.user && req.method === 'GET' && (req.path.startsWith('/auth/') || ['/forgot', '/reset', '/login', '/register'].includes(req.path))) {
-      let token = req.cookies[authConfig.csrfCookieName];
-      if (!TOKEN.test(token || '')) {
-        token = generateRawToken();
-        res.append('Set-Cookie', serializeCookie(authConfig.csrfCookieName, token, { ...cookieOptions(authConfig), maxAge: 7200 }));
+    if (!req.auth.user) {
+      const raw = req.cookies[authConfig.csrfCookieName];
+      let anonymous = TOKEN.test(raw || '') ? await prisma.session.findUnique({ where: { tokenHash: hashToken(raw) } }) : null;
+      if (!anonymous || anonymous.userId !== null || anonymous.expiresAt <= new Date()) anonymous = null;
+      const formGet = ['GET', 'HEAD'].includes(req.method) && (req.path.startsWith('/auth/') || ['/forgot', '/reset', '/login', '/register', '/activate'].includes(req.path));
+      if (!anonymous && formGet) {
+        const sid = generateRawToken();
+        anonymous = await prisma.session.create({ data: { tokenHash: hashToken(sid), csrfToken: generateRawToken(), userId: null, expiresAt: new Date(Date.now() + authConfig.anonymousTtlMs) } });
+        res.append('Set-Cookie', serializeCookie(authConfig.csrfCookieName, sid, { ...cookieOptions(authConfig), maxAge: authConfig.anonymousTtlMs / 1000 }));
       }
-      res.locals.csrfToken = token;
+      if (anonymous) {
+        req.auth.csrfSession = anonymous;
+        res.locals.csrfToken = anonymous.csrfToken;
+      }
     }
     next();
   });
@@ -77,7 +91,7 @@ function requireCsrf(req, res, next) {
       validOrigin = false;
     }
   }
-  const expected = req.auth.session?.csrfToken || req.cookies[req.authConfig.csrfCookieName];
+  const expected = req.auth.session?.csrfToken || req.auth.csrfSession?.csrfToken;
   if (!validOrigin || !safeEqualToken(expected, req.body?._csrf)) {
     return res.status(403).render('error', { title: 'Không được phép', status: 403, message: 'Yêu cầu không hợp lệ.', back: '/dishes' });
   }
@@ -86,31 +100,7 @@ function requireCsrf(req, res, next) {
 
 function requireAdminAuth(req, res, next) {
   if (req.auth.user) return next();
-  return ['GET', 'HEAD'].includes(req.method) ? res.redirect(302, `/auth/login?next=${encodeURIComponent(sanitizeNextPath(req.originalUrl))}`) : res.redirect(303, '/auth/login');
-}
-
-function createRecaptchaVerifier(env = process.env, fetchImpl = globalThis.fetch) {
-  const siteKey = env.RECAPTCHA_SITE_KEY || '', secret = env.RECAPTCHA_SECRET_KEY || '';
-  let hostname;
-  try { hostname = new URL(env.APP_BASE_URL).hostname; } catch {}
-  return {
-    siteKey,
-    isConfigured: () => Boolean(siteKey && secret && hostname),
-    async verifyToken(token, remoteIp) {
-      if (!siteKey || !secret || !hostname) return { ok: false, reason: 'not-configured' };
-      if (typeof token !== 'string' || !token) return { ok: false, reason: 'missing-input-response' };
-      try {
-        const body = new URLSearchParams({ secret, response: token });
-        if (remoteIp) body.set('remoteip', remoteIp);
-        const response = await fetchImpl('https://www.google.com/recaptcha/api/siteverify', { method: 'POST', body, signal: AbortSignal.timeout(10000) });
-        if (!response.ok) return { ok: false, reason: 'network-error' };
-        const result = await response.json();
-        return result.success === true && result.hostname === hostname ? { ok: true, reason: null } : { ok: false, reason: 'verification-failed' };
-      } catch {
-        return { ok: false, reason: 'network-error' };
-      }
-    }
-  };
+  return res.redirect(303, '/login');
 }
 
 function createLoginRouter({ prisma, authConfig, recaptchaVerifier }) {
@@ -124,10 +114,10 @@ function createLoginRouter({ prisma, authConfig, recaptchaVerifier }) {
 
   router.post('/login', requireCsrf, asyncRoute(async (req, res) => {
     const email = normalizeEmail(req.body.email), next = sanitizeNextPath(req.body.next), password = req.body.password;
-    if (!EMAIL.test(email) || email.length > 120 || typeof password !== 'string' || !password || password.length > 128) return render(res, 400, email.slice(0, 120), next, { form: 'Thông tin đăng nhập không hợp lệ.' });
+    if (!validEmail(email) || typeof password !== 'string' || !password || [...password].length > 128) return render(res, 400, email.slice(0, 254), next, { form: 'Thông tin đăng nhập không hợp lệ.' });
     const ip = req.ip || 'unknown';
     const ipResult = await prisma.$transaction(async tx => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`login-ip:${ip}`}, 0))`;
+      await lockDatabaseWrite(tx);
       const now = new Date();
       const row = await tx.loginIpLimit.findUnique({ where: { ip } });
       if (!row || now - row.windowStart >= 60000) {
@@ -147,11 +137,11 @@ function createLoginRouter({ prisma, authConfig, recaptchaVerifier }) {
       res.set('Retry-After', String(Math.max(1, Math.ceil((existing.lockedUntil - Date.now()) / 1000))));
       return render(res, 429, email, next, { form: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.' });
     }
-    const captcha = await recaptchaVerifier.verifyToken(req.body['g-recaptcha-response'], ip);
-    if (!captcha.ok) return render(res, ['not-configured', 'network-error'].includes(captcha.reason) ? 503 : 400, email, next, { form: 'Không thể xác minh reCAPTCHA. Vui lòng thử lại.' });
+    const captcha = await recaptchaVerifier.verifyToken(req.body['g-recaptcha-response'], ip, 'login');
+    if (!captcha.ok) return render(res, ['not-configured', 'network-error', 'provider-error'].includes(captcha.reason) ? 503 : 400, email, next, { form: 'Không thể xác minh reCAPTCHA. Vui lòng thử lại.' });
 
     const outcome = await prisma.$transaction(async tx => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`login-email:${email}`}, 0))`;
+      await lockDatabaseWrite(tx);
       const now = new Date();
       let attempt = await tx.loginAttempt.findUnique({ where: { email } });
       if (attempt && now - attempt.lastFailure >= 86400000) {
@@ -171,7 +161,7 @@ function createLoginRouter({ prisma, authConfig, recaptchaVerifier }) {
         });
         return { invalid: true };
       }
-      if (!user.emailVerifiedAt) return { unverified: true };
+      if (user.status !== 'active' || !user.emailVerifiedAt) return { unverified: true };
       if (attempt) await tx.loginAttempt.delete({ where: { email } });
       if (req.auth.rawToken) await tx.session.deleteMany({ where: { tokenHash: hashToken(req.auth.rawToken) } });
       return { session: await createSessionForUser({ prisma: tx, userId: user.id, authConfig }) };

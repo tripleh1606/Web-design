@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL is missing. Copy .env.example to .env and set your Supabase Session pooler URL.');
+  console.error('DATABASE_URL is missing. Copy .env.example to .env and set DATABASE_URL to file:./soucha.db for SQLite.');
   process.exit(1);
 }
 

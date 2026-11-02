@@ -6,3 +6,8 @@ node_modules/
 coverage/
 generated/
 .migration-source/
+
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

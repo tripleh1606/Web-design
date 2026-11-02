@@ -1,6 +1,6 @@
 # Soucha — bản chuyển đổi Restaurant SSR
 
-Đây là bản chuyển đổi từ app Soucha Next.js ở thư mục cha sang **Express + EJS + Prisma + Supabase PostgreSQL** theo [`restaurant_SSR/requirement.md`](../restaurant_SSR/requirement.md). App gốc ở `../soucha/` không bị sửa.
+Đây là bản Restaurant SSR dùng **Express + EJS + Prisma + SQLite**, tiếp nối dữ liệu nhà hàng tuần 5 theo cấu hình SQLite của nhóm. Phần đăng ký dùng email OTP và reCAPTCHA v3. Các yêu cầu SSR tham khảo tại [`restaurant_SSR/requirement.md`](../restaurant_SSR/requirement.md).
 
 ## Những gì được mang từ app gốc
 
@@ -13,29 +13,34 @@ Phần xử lý React `useState`/`fetch`/Next API của menu và quản trị đ
 
 ## Chạy
 
-Yêu cầu Node.js 20 trở lên và Session pooler URL (port 5432) của Supabase.
+Yêu cầu Node.js 20 trở lên. SQLite dùng file cục bộ, không cần cài server database.
 
 ```powershell
-cd D:\WebApplication\Web-design\Soucha\restaurant-ssr
-npm install
-Copy-Item .env.example .env
+cd D:\Minh\Web-design\week6\restaurant
+npm ci
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Điền `DATABASE_URL` thật vào `.env` trên máy cá nhân; **không commit file này**. Nếu `.env` đã có thì giữ nguyên, không copy đè. Sau đó:
+Đặt `DATABASE_URL="file:./soucha.db"` trong `.env`: file nằm tại `week6/restaurant/prisma/soucha.db`. Điền SMTP và reCAPTCHA để đăng ký thực tế; **không commit `.env` hay file database**. Với database mới:
 
 ```powershell
 npm run db:generate
 npm run db:push
-npm run db:seed
 npm start
 ```
 
-Mở `http://localhost:3001/dishes`. Port 3001 tránh xung đột với app Soucha Next.js trên port 3000. Restart `npm start` nếu server đang chạy từ trước khi cập nhật code.
+Mở `http://localhost:3001/register`. Chỉ chạy `npm run db:seed` khi muốn nạp dữ liệu mẫu vào database riêng vì seed có xóa dữ liệu nhà hàng. Để giữ dữ liệu tuần 5, dừng app tuần 5, sao lưu và sao chép file SQLite đang dùng sang `prisma/soucha.db` của tuần 6 (không ghi đè file đã tồn tại), rồi chạy `db:push` để bổ sung bảng auth. Xem [docRegister](../docRegister.md) nếu database đã có bảng tài khoản cũ. Restart server sau khi đổi cấu hình.
 ## Tài khoản và bảo mật
 
-Trước khi đăng ký hoặc đăng nhập, cấu hình `RECAPTCHA_SITE_KEY` và `RECAPTCHA_SECRET_KEY` cho Google reCAPTCHA v2 checkbox đúng hostname của `APP_BASE_URL`. Thiếu khóa hoặc Google không phản hồi sẽ từ chối đăng nhập/đăng ký. Đăng ký cũng yêu cầu `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` và, nếu máy chủ yêu cầu, `SMTP_USER`/`SMTP_PASS`; `SMTP_SECURE=true` bật TLS ngay khi kết nối. Người dùng mở liên kết trong email để xác minh, sau đó đăng nhập; xác minh không tự đăng nhập. Đăng ký lại email chưa xác minh thay thế mật khẩu đang chờ và vô hiệu hóa liên kết cũ.
+Đăng ký dùng `/register` → `/activate` → `/login`, CAPTCHA score-based v3 và OTP email sáu chữ số. Cấu hình `RECAPTCHA_ADAPTER=v3`, `RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY` đúng hostname của `APP_BASE_URL`; backend kiểm tra action `register`/`login`, score tối thiểu `RECAPTCHA_MIN_SCORE=0.5`, tuổi token và hostname. Không dùng key v2 checkbox hoặc credential Cloud với adapter này. Thiếu khóa hoặc provider lỗi thì từ chối xác minh, không có bypass trong app.
 
-`APP_BASE_URL` phải là origin công khai HTTPS trong production. Session lưu PostgreSQL 24 giờ theo mặc định (`SESSION_TTL_HOURS`); cookie HttpOnly, SameSite=Lax, Secure với HTTPS/production. Mọi `/admin` yêu cầu tài khoản đã xác minh; mọi thay đổi và đăng xuất yêu cầu CSRF. Sau ba lần sai cùng email chuẩn hóa, lần thử tiếp theo phải chờ 30 giây; mỗi lần sai sau đó thời gian chờ tăng gấp đôi đến 15 phút. Bộ đếm xóa sau khi đăng nhập thành công hoặc không có lỗi trong 24 giờ. Ngoài ra giới hạn 20 yêu cầu đăng nhập hợp lệ về định dạng mỗi IP mỗi phút; ứng dụng mặc định không tin tưởng proxy, vì vậy cần cấu hình hạ tầng phù hợp để nhận IP trực tiếp đáng tin cậy.
+SMTP dùng `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` và nếu cần `SMTP_USER`/`SMTP_PASS`; `SMTP_SECURE=true` bật TLS ngay khi kết nối. Register trả phản hồi chung trước khi gửi thư bất đồng bộ, không xác nhận giả rằng thư đã đến. OTP có hạn 10 phút, chỉ dùng một lần; gửi lại tối thiểu 60 giây, tối đa 5 yêu cầu/giờ/email và 20/15 phút/IP. Đăng ký có thêm giới hạn 5 request/15 phút/email và 20/15 phút/IP. Activate giới hạn 10 request/phút/email và 30/phút/IP. Sai OTP 5 lần khóa 15 phút; register/resend không xóa ngân sách sai hoặc khóa. Các giá trị có thể cấu hình trong `.env.example`.
+
+Tài khoản mới có `status=pending`, `role=viewer`; password và OTP dùng Argon2id (`argon2@0.44.0`, salt ngẫu nhiên, memoryCost 65536 KiB, timeCost 3, parallelism 1, hashLength 32). Email trim ngoài và chỉ lowercase domain, giữ nguyên local-part/dấu chấm/plus; validator là `validator@13.15.23`. Đăng ký lại pending giữ nguyên mật khẩu đầu tiên và xử lý như resend; active không bị sửa. Kích hoạt thành công không tự đăng nhập. Phiên CSRF ẩn danh lưu SQLite, `userId=null`, có hạn 30 phút; cookie `soucha_csrf` chứa định danh ngẫu nhiên, token CSRF riêng nằm trong form.
+
+Xem hướng dẫn triển khai, nâng schema cũ, thiết kế và kết quả test trong [docRegister](../docRegister.md). Chỉ database SQLite có `users`/`sessions` theo schema auth cũ, chưa có `status`/`emailOriginal`, mới chạy `npm run db:upgrade:register` một lần trước `db:push`. Script `prisma/registration-upgrade.sql` không dành cho database tuần 5 chỉ có dữ liệu nhà hàng. Liên kết GET `/auth/verify-email` cũ không còn kích hoạt tài khoản.
+
+`APP_BASE_URL` phải là origin công khai HTTPS trong production. Session đăng nhập hiện có lưu SQLite 24 giờ theo mặc định (`SESSION_TTL_HOURS`); cookie `soucha_session` HttpOnly, SameSite=Lax, Secure với HTTPS/production. `/dishes`, `/dishes/:id` và mọi `/admin` yêu cầu tài khoản active đã xác minh; anonymous/pending nhận 303 `/login` trước query CRUD. Mọi thay đổi và đăng xuất yêu cầu CSRF. Luồng login hiện có vẫn dùng CAPTCHA mỗi lần và progressive lock: sau ba lần sai, lần tiếp theo chờ 30 giây, tăng gấp đôi đến 15 phút; reset khi login thành công hoặc không sai trong 24 giờ. Login giới hạn 20 request hợp lệ về định dạng/IP/phút. Các chính sách login này chưa được đổi thành ngưỡng login mới trong plan bởi nhánh này tập trung đăng ký. Ứng dụng mặc định không tin `X-Forwarded-For` do client tự gửi.
 
 Giữ secret ngoài mã nguồn. Không dùng `db:seed` trên dữ liệu cần bảo toàn; chỉ `db:push` với database đã được phê duyệt vì thao tác này thay đổi schema.
 
@@ -53,7 +58,11 @@ Client không gửi CRUD bằng `fetch`/AJAX. `.env.example` không chứa crede
 
 ```powershell
 npm test
+npm run test:register
+npm run test:register:db
 $env:LIVE_SMOKE_ALLOW_DB_WRITE="1"; npm run test:live
 ```
 
-`npm test` dùng dữ liệu giả để kiểm tra HTTP, validation và xác thực. Live smoke ghi fixture vào PostgreSQL và xóa tài khoản khi kết thúc; chỉ chạy sau khi chỉ định `DATABASE_URL` là database riêng dùng để thử nghiệm và đồng ý bằng `LIVE_SMOKE_ALLOW_DB_WRITE=1`. Smoke dùng adapter CAPTCHA thử nghiệm tiêm riêng, không chứng minh tích hợp Google hoặc SMTP thực tế; để kiểm tra provider, dùng khóa v2 đúng hostname, SMTP và hộp thư do bạn kiểm soát rồi đăng ký, xác minh email, đăng nhập và đăng xuất qua trình duyệt.
+`npm test` dùng dữ liệu giả để kiểm tra HTTP, validation và xác thực. `test:register:db` tạo file SQLite riêng trong thư mục tạm cùng SMTP server cục bộ, kiểm tra nâng schema tuần 5, migration auth cũ, race/rollback và gửi thư qua Nodemailer; dọn database sau test. Bộ test không dùng `DATABASE_URL` của nhóm, không cần Docker hay SQLite. Chạy `npm run db:generate` trước lần test DB đầu tiên. `db:push` dùng wrapper đặt `RUST_LOG=info` để tránh lỗi schema engine khi tạo file SQLite mới trên Windows.
+
+Live smoke ghi fixture vào SQLite và xóa tài khoản khi kết thúc; chỉ chạy với `DATABASE_URL` riêng dùng để thử nghiệm và `LIVE_SMOKE_ALLOW_DB_WRITE=1`. Adapter giả trong test và SMTP cục bộ không chứng minh Google hoặc hộp thư bên ngoài hoạt động. Kiểm chứng provider cần key v3 đúng hostname, SMTP thật và hộp thư do người kiểm thử kiểm soát.

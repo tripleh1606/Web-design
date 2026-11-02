@@ -1,134 +1,158 @@
-# Hợp đồng chung: đăng ký, đăng nhập và logout song song
+# Hợp đồng chung — xác thực tài khoản trên SSR
 
-Nguồn tiếng Anh: local://auth-contract-english.md. Chỉ mục bộ tài liệu: local://auth-bundle-english.md.
+Cập nhật 02/11/2026. **Plan, chưa phải chức năng đã triển khai.** Đây là đặc tả chuẩn của bộ tài liệu; [English summary](auth-contract-english.md) và các plan thành phần phải tuân theo tài liệu này.
 
-Ba file plan triển khai:
-- [Đăng ký — email và reCAPTCHA](local://auth-registration-plan.md)
-- [Đăng nhập — session DB và bảo vệ CRUD](local://auth-login-plan.md)
-- [Logout — thu hồi session](local://auth-logout-plan.md)
+## 1. Nguồn, hiện trạng và phạm vi
 
-## Bối cảnh hiện tại
+Nguồn: [Xác thực tài khoản trên SSR.html](<D:/User_C_BackUp/Download/Xác thực tài khoản trên SSR.html>), đặc biệt slide 48–63 và speaker notes. [Discovery](auth-discovery.md) ghi nhận app CommonJS Node.js/Express 4/EJS, Prisma 6.12 và PostgreSQL hiện có CRUD nhưng chưa có auth.
 
-Cần ba plan triển khai cùng một hợp đồng chung cho phép làm song song: đăng ký với email xác minh thực và Google reCAPTCHA; đăng nhập bằng cookie/session lưu PostgreSQL, yêu cầu đăng nhập trước khi dùng CRUD; logout. Phạm vi đã chốt là bảo vệ các endpoint SSR/form `/admin` hiện có, không thêm JSON API. Việc xem thực đơn công khai vẫn công khai. Hợp đồng này quyết định các giao diện dùng chung của ba plan; các đường dẫn auth đề xuất bên dưới là file mới.
+Bốn phần bắt buộc: đăng ký có CAPTCHA + OTP; login/session bền vững + chống brute force; logout/bảo vệ CRUD; forgot/reset password. Tích hợp vào `week6/restaurant`, giữ dữ liệu nhà hàng. Mọi tài khoản **active** được dùng CRUD ở block này; vẫn lưu `role=viewer` do server gán để chứng minh client không tự nâng quyền. Phân quyền theo role, MFA, JWT/SPA, đăng nhập bằng mạng xã hội và logout mọi thiết bị bằng nút riêng nằm ngoài bài.
 
-Ứng dụng hiện tại: CommonJS Node >=20, Express 4/EJS, Prisma 6.12/PostgreSQL (`restaurant/package.json:1-29`); app factory `createApp({ prisma, logger = console })` (`restaurant/src/app.js:16-402`); khởi động tại `restaurant/server.js:1-27`; chưa có thực thể auth (`restaurant/prisma/schema.prisma:1-68`). Test CRUD dùng fake Prisma được inject và giả định admin truy cập công khai (`restaurant/tests/app.test.js:18-135,167-184`); live smoke cũng vậy (`restaurant/tests/live-smoke.js:24-26`). Các lệnh dưới đây chỉ chạy từ `restaurant/` sau khi phê duyệt triển khai, không chạy trong lúc lập kế hoạch.
+Slide 54 không nêu ngoại lệ cho trang thực đơn: bảo vệ cả `GET /dishes`, `GET /dishes/:id` và toàn bộ `/admin` (danh sách, chi tiết, form, ghi và quan hệ), vì các route này đều đọc/ghi dữ liệu nhà hàng. Đây là thay đổi so với menu đang công khai trong code cũ. Trang auth cần thiết và static assets vẫn truy cập được khi chưa đăng nhập. Không tạo JSON CRUD API mới. Auth dùng form POST và server render EJS.
 
-## Chức năng cần triển khai
+## 2. Quyết định triển khai và chính sách công bố
 
-Chỉ người dùng đã xác minh email mới được truy cập mọi route `/admin`, bao gồm trang đọc và mọi thao tác ghi thực thể/liên kết. Trình duyệt giữ định danh session ngẫu nhiên, không chứa thông tin người dùng, trong cookie HttpOnly; PostgreSQL giữ trạng thái session qua lần khởi động lại ứng dụng. Xác minh email không tự đăng nhập. Logout vô hiệu hóa session DB hiện tại, không phải mọi session của tài khoản. Nhiều thiết bị có thể đăng nhập độc lập. Token session và xác minh chỉ lưu hash trong DB, không lưu bản thô.
+| Nội dung | Lựa chọn của nhóm |
+| --- | --- |
+| Database/session store | PostgreSQL hiện có qua Prisma; không MemoryStore trong tiến trình |
+| Password | Thư viện Argon2id, salt riêng do thư viện sinh; verify bằng thư viện; chốt phiên bản/tham số theo tài liệu chính thức khi cài và ghi README |
+| Email | Lưu `emailOriginal` và `email` chuẩn hóa unique; trim ngoài, lowercase domain, giữ nguyên local-part, không xóa dấu chấm/plus theo nhà cung cấp; dùng thư viện kiểm tra email đã được kiểm thử |
+| Password input | 8–128 ký tự theo chính sách bài tập, xác nhận trùng; không trim/đổi nội dung password |
+| OTP | 6 chữ số, sinh bằng CSPRNG; 10 phút, một lần, purpose `activation`; chỉ lưu hash |
+| Giới hạn OTP | 5 lần sai thì khóa 15 phút. Gửi lại không reset attempts/khóa. Chỉ hết kỳ khóa mới mở một ngân sách thử mới; mã hết hạn vẫn phải gửi lại |
+| Gửi lại OTP | Chờ ít nhất 60 giây; tối đa 5 lần yêu cầu/giờ/email, 20 lần/15 phút/IP. Áp bucket kể cả email không tồn tại hoặc đã active |
+| Register | CAPTCHA mọi lần; giới hạn 5 request/15 phút/email và 20/15 phút/IP |
+| Login | Cửa sổ 15 phút: từ 3 lần sai cần CAPTCHA; lần sai thứ 10 khóa 5 phút; giới hạn thêm 50 request/15 phút/IP |
+| Activate request | Giới hạn 10 request/phút/email và 30/phút/IP, độc lập ngân sách thử OTP |
+| Forgot | 3 request/15 phút/email và 20/15 phút/IP, áp cả email không tồn tại |
+| Reset token | 32 byte ngẫu nhiên, hash trong DB; 15 phút; một lần; yêu cầu mới vô hiệu mọi token cũ chưa dùng |
+| Reset GET/HEAD/POST | Dùng chung giới hạn 20 request/15 phút/IP, bao phủ cả việc dò token trong URL; không khóa tài khoản theo token người ngoài tự gửi |
+| Session | Auth: idle timeout 30 phút, absolute timeout 24 giờ; anonymous CSRF session: 30 phút. Cookie `sid` HttpOnly, Path=/, host-only, SameSite=Lax, Secure khi triển khai HTTPS |
+| CAPTCHA | Google reCAPTCHA score-based; action `register` hoặc `login`, ngưỡng score 0.5 do nhóm chọn. Kiểm tra token hợp lệ, hostname, action và score ở backend |
+| Email delivery | SMTP/thư thử nghiệm thật, credential qua env; không phản hồi OTP/reset token cho browser |
 
-## Hướng triển khai tổng thể
+Các con số là quyết định có thể cấu hình, phải đồng bộ README và test. reCAPTCHA được chọn dạng score-based để kiểm tra sai purpose bằng action: đây là điều chỉnh so với draft v2 cũ. Với key v3 dùng API xác minh v3 tương ứng; với key Google Cloud dùng assessment và credential Cloud. **Chọn đúng một adapter theo loại key thực được cấp khi setup**, ghi rõ README; không trộn secret v3 với Cloud, không mock thành công trong app. Hợp đồng hành vi của hai adapter giống nhau: `verify(token, expectedAction, hostname) -> valid/invalid/providerError`. Provider lỗi phải fail closed (lỗi kỹ thuật), không xem là CAPTCHA đạt hoặc password sai.
 
-### Quyền sửa file và các mốc đồng bộ
+Counter nằm tại server trong PostgreSQL, không cookie/localStorage; dùng cùng luật cho email tồn tại và không tồn tại. IP chỉ lấy từ kết nối hoặc proxy tin cậy đã cấu hình, không tin tùy ý X-Forwarded-For. Chỉ login thành công mới xóa số lần sai theo email; không xóa giới hạn IP, không reset counter khi CAPTCHA đúng hoặc password đúng của user pending. Hết thời gian khóa login vẫn cần CAPTCHA nếu cửa sổ sai còn hiệu lực.
 
-Chỉ định đúng một người tích hợp, đồng thời phụ trách đăng nhập. Người này hoàn thành trước nền tảng dùng chung: dependencies/lockfile, schema, Prisma client đã generate, và đầy đủ tiện ích/middleware trong `src/auth/session.js`; module này không import registration/logout. Mốc này phải cung cấp mã hoạt động, không phải stub, route giả hay interface no-op. Không thêm import vào `app.js` khi module tương ứng còn thiếu.
+## 3. Dữ liệu và module dùng chung
 
-Sau mốc nền tảng, ba nhánh đăng ký, phần đăng nhập/tích hợp còn lại và logout chạy đồng thời trong các file riêng bên dưới. Người tích hợp mount toàn bộ router sau khi cả ba module thật tồn tại. Không worker khác sửa file chung, manifest, schema hoặc file generate. Không chạy cài đặt/generation/test/formatter dùng chung đồng thời với chỉnh sửa. Ba việc độc lập sau bước nền tảng chung, không phải trước bước đó.
+Giữ nguyên Dish/Chef/Ingredient và các quan hệ. Thêm các model sau; tên cột cụ thể phải thống nhất trong Prisma và tất cả plan/test:
 
-- **Đăng ký** chỉ sở hữu file mới `restaurant/src/auth/registration.js`, `restaurant/views/auth/register.ejs`, `restaurant/views/auth/verify-result.ejs`, `restaurant/tests/auth-registration.test.js`.
-- **Logout** chỉ sở hữu file mới `restaurant/src/auth/logout.js`, `restaurant/tests/auth-logout.test.js`.
-- **Đăng nhập/người tích hợp** sở hữu file mới `restaurant/src/auth/session.js`, `restaurant/views/auth/login.ejs`, `restaurant/tests/auth-session.test.js`; các file chung hiện có `restaurant/package.json`, `restaurant/package-lock.json`, `restaurant/.env.example`, `restaurant/prisma/schema.prisma`, `restaurant/generated/prisma/**`, `restaurant/server.js`, `restaurant/src/app.js`, `restaurant/views/partials/header.ejs`, `restaurant/views/admin/form.ejs`, `restaurant/views/admin/delete.ejs`, `restaurant/views/admin/unlink.ejs`, `restaurant/views/admin/dish-detail.ejs`, `restaurant/views/admin/dish-ingredient-edit.ejs`, `restaurant/views/admin/chef-detail.ejs`, `restaurant/tests/app.test.js`, `restaurant/tests/live-smoke.js`. Không thêm công việc CSS không liên quan. Người tích hợp sở hữu cập nhật tài liệu hành vi nếu quy ước repository yêu cầu.
+| Model | Các trường chính và ràng buộc |
+| --- | --- |
+| User | id; emailOriginal; email normalized unique; passwordHash; role default viewer; status enum pending/active default pending; emailVerifiedAt nullable; createdAt/updatedAt |
+| ActivationChallenge | userId unique + FK; purpose=activation; otpHash; expiresAt; attempts; lockedUntil nullable; lastSentAt; usedAt nullable. Một hàng cho mỗi user; giữ dấu usedAt sau kích hoạt để kiểm chứng |
+| PasswordReset | id; userId FK; tokenHash unique; expiresAt; usedAt nullable; invalidatedAt nullable; createdAt. Giữ dấu token đã dùng/hết hiệu lực, không lưu token thô |
+| Session | id; sidHash unique; userId FK nullable cho phiên form ẩn danh; csrfToken; createdAt; lastSeenAt; expiresAt (hạn tuyệt đối) |
+| ActivationAttempt | emailKey unique; attempts; lockedUntil. Theo dõi ngân sách sai OTP cho mọi email (pending/active/không tồn tại); là nguồn chung để quyết định khóa, đồng bộ attempts/lockedUntil vào ActivationChallenge khi hàng đó tồn tại |
+| LoginAttempt | emailKey unique (HMAC hoặc hash khóa chuẩn hóa theo lựa chọn được công bố); failedCount; windowStartedAt; lockedUntil |
+| RateLimitBucket | key unique gồm purpose + email/IP; count; windowStartedAt; nextAllowedAt nullable; cập nhật nguyên tử cho các endpoint giới hạn |
 
-### Schema lưu trữ đã chốt
+Cookie chỉ chứa `sid` ngẫu nhiên 32 byte, không userId/role/password. DB lưu SHA-256 của sid để tra cứu; không dùng SHA-256 thay Argon2id cho password. OTP dùng hash có salt qua thư viện; hash không thay giới hạn thử và hạn dùng. Session có userId=null chỉ là phiên CSRF ẩn danh, **không phải đăng nhập**; pending không bao giờ được cấp session gắn userId. CSRF token trong form là dữ liệu được phép render, không nhầm với OTP/reset token cần giữ kín.
 
-Thêm các model sau, giữ nguyên mọi thực thể nhà hàng:
+Các module dự kiến dưới `restaurant/src/auth/`:
 
-```prisma
-model User {
-  id Int @id @default(autoincrement())
-  email String @unique
-  passwordHash String
-  emailVerifiedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sessions Session[]
-  verificationTokens EmailVerificationToken[]
-  @@map("users")
-}
-model Session {
-  id Int @id @default(autoincrement())
-  tokenHash String @unique
-  csrfToken String
-  userId Int
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("sessions")
-}
-model EmailVerificationToken {
-  id Int @id @default(autoincrement())
-  tokenHash String @unique
-  userId Int
-  expiresAt DateTime
-  usedAt DateTime?
-  createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("email_verification_tokens")
-}
-```
+- `config.js`: validate origin, HTTPS/secure-cookie, TTL, ngưỡng và provider config; không in secret.
+- `credentials.js`: chuẩn hóa/validate email, hash/verify password, random token/OTP, hash định danh và so sánh an toàn; dùng thư viện/crypto của nền tảng.
+- `session.js`: đọc cookie, tra store, gắn req.auth và res.locals.currentUser, tạo phiên ẩn danh cho form, tạo/rotate auth session, expire cookie, requireLogin, requireCsrf.
+- `throttle.js`: bucket theo email/IP và cửa sổ sai login, cập nhật nguyên tử.
+- `captcha.js`: adapter Google đúng loại key, trả invalid và providerError riêng; action cố định do route truyền, không lấy action/score/captchaPassed do browser khai.
+- `mail.js`: sendActivationOtp, sendPasswordReset, sendPasswordChangedNotice; text/HTML escaped, timeout, không log payload chứa bí mật.
+- `registration.js`, `login.js`, `logout.js`, `password-reset.js`: route theo mục 4, không tự viết lại helper chung.
 
-Dùng quy ước `npm run db:generate` / `npm run db:push` hiện có, không tạo quy ước migration thứ hai. `db:push` chỉ chạy với DB kiểm chứng riêng dùng một lần, không dùng DB production chưa được phê duyệt. Không chạy seed cho authentication smoke; phải đọc lại hành vi phá hủy của seed trước bất kỳ lần sử dụng riêng nào.
+Không yêu cầu dựng framework auth mới. Khi code chọn thư viện cookie/CSRF/store có sẵn phù hợp, giữ nguyên hành vi trên. Các handler async phải chuyển lỗi vào error middleware Express 4.
 
-### API module dùng chung đã chốt
+## 4. Hợp đồng route và phản hồi
 
-`restaurant/src/auth/session.js` export các hàm CommonJS sau; mọi hàm phải được triển khai thật trước mốc nền tảng:
+Đường dẫn bắt buộc trong bộ plan này nằm ở root, **không thêm prefix /auth**.
 
-- `resolveAuthConfig(overrides = {}) -> config`: input override và output dùng các key `appBaseUrl`, `sessionCookieName`, `csrfCookieName`, `sessionTtlMs`, `emailVerifyTtlMs`, `cookieSecure`, `recaptchaSiteKey`, `recaptchaSecretKey`. Override tường minh ưu tiên hơn env. TTL override là số nguyên an toàn dương tính bằng mili giây; env `SESSION_TTL_HOURS`/`EMAIL_VERIFY_TTL_HOURS` là số giờ nguyên dương hữu hạn, chuyển thành mili giây nguyên an toàn, mặc định 24 giờ. Origin mặc định `http://localhost:${process.env.PORT || 3001}`; chỉ chấp nhận URL gốc HTTP(S), không credentials/query/fragment/đường dẫn khác gốc, bỏ slash cuối. Production bắt buộc cấu hình tường minh APP_BASE_URL HTTPS công khai. Giá trị được cung cấp nhưng sai phải throw khi khởi động. Secure bật khi production HOẶC origin HTTPS; chỉ cấu hình test inject mới được override boolean. Tên mặc định `soucha_session`/`soucha_csrf`; tên cookie đúng cú pháp HTTP token. Chỉ test được override csrfCookieName.
-- `normalizeEmail(value) -> string`: string thì trim+lowercase, không phải string trả rỗng. Hai form dùng email tối đa120 ký tự, regex `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`.
-- `hashPassword(password) -> Promise<string>` và `verifyPassword(password, storedHash) -> Promise<boolean>`: scrypt async của Node, salt16 byte ngẫu nhiên, key64 byte, `N=16384,r=8,p=1`; lưu `scrypt$<32 lower hex salt>$<128 lower hex key>`. Hash đúng UTF-8 đã nhập, không trim/chuẩn hóa Unicode. Hash sai định dạng trả false, không throw; so sánh timingSafeEqual. Đăng ký password8..128 ký tự, confirmPassword khớp chính xác. Đăng nhập tối đa128 ký tự, email không tồn tại dùng một dummy hash hợp lệ tính trước, không tạo dummy mỗi request.
-- `generateRawToken() -> string`:32 byte ngẫu nhiên thành64hex chữ thường. `hashToken(rawToken) -> string`:SHA-256 hex chữ thường. `safeEqualToken(a,b) -> boolean`: yêu cầu hai chuỗi64hex chữ thường rồi so sánh buffer thời gian hằng.
-- `parseCookies(header = '') -> object`: tách cặp bằng dấu chấm phẩy, decode an toàn, bỏ mã hóa sai; tên cookie trùng làm cookie đó không hợp lệ thay vì chọn theo thứ tự. Export dùng lại `serializeCookie(name,value,options) -> string`; options `httpOnly`, `secure`, `sameSite`, `path`, `maxAge` (giây), `expires` (Date).
-- `setSessionCookie(res, rawToken, config)` và `clearSessionCookie(res, config)`: append Set-Cookie, không ghi đè cookie khác. Thuộc tính `HttpOnly; Path=/; SameSite=Lax`, thêm Secure có điều kiện; cấp `Max-Age=floor(sessionTtlMs/1000)`, xóa `Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`. Host-only, không Domain. Cookie CSRF ẩn danh cùng thuộc tính, Max-Age7200.
-- `sanitizeNextPath(value) -> string`: chỉ cho đường dẫn cùng origin có pathname đúng `/admin` hoặc bắt đầu `/admin/`, tối đa200 ký tự; không backslash/control/protocol-relative/encoded pathname separators; sai thì `/admin/dishes`. Dùng URL với dummy origin cố định; chỉ trả pathname+search và bỏ `_method` khỏi đích redirect. Chỉ điều hướng, không phát lại ghi.
-- `createSessionForUser({ prisma, userId, authConfig, res }) -> Promise<{rawToken,tokenHash,csrfToken,expiresAt}>`: tạo token/CSRF mới, lưu session có expiresAt tuyệt đối now+TTL. `res` tùy chọn: có thì append cookie sau lưu, không có thì trả token data mà không phát header. Login truyền transaction delegate làm prisma, bỏ res khi nguyên tử xóa hàng cũ được trình ra và tạo hàng mới; sau commit gọi setSessionCookie với res thật. Không sliding refresh; giữ session khác. Lỗi DB không phát redirect thành công/cookie session mới.
-- `attachSessionMiddleware({ prisma, authConfig }) -> middleware`: khởi tạo `req.auth={user:null,session:null,rawToken:null}`, `req.cookies`, `res.locals.currentUser=null`, `res.locals.csrfToken=''`; lookup cookie session đúng định dạng theo tokenHash include user. Chỉ xác thực hàng tồn tại, chưa hết hạn và user đã xác minh. Điền req.auth đầy đủ chỉ dùng nội bộ, currentUser chỉ `{id,email}`, csrfToken lấy từ session DB. Xóa cookie được trình ra nếu thiếu trong DB/sai/hết hạn/đã xóa/user chưa xác minh; có thể deleteMany hàng hết hạn theo hash. DB outage gọi next(error)/500, không coi là ẩn danh. GET auth ẩn danh tạo/tái dùng cookie `soucha_csrf`64hex và expose qua res.locals/`req.csrfToken`; route động khác có thể khởi tạo tương tự nhưng không chấp nhận token submit tự tạo mới. Chuyển lỗi async đúng Express4.
-- `requireCsrf(req,res,next)`: expected là session.csrfToken đã xác thực hoặc cookie CSRF ẩn danh gửi đến; submitted là body `_csrf`; thiếu/sai định dạng/không khớp ->error view403. Origin có mặt phải trùng app origin; không Origin nhưng có Referer thì Referer cùng origin. Thiếu cả hai chỉ được chấp nhận khi token hợp lệ, phục vụ HTTP client. Đọc cấu hình từ `req.authConfig` do attachSessionMiddleware đặt. Login/register/logout tự áp dụng; mọi `/admin` ngoài GET/HEAD/OPTIONS áp dụng sau guard/methodOverride. Không so sánh với cookie vừa cấp nếu request không có cookie đến.
-- `requireAdminAuth(req,res,next)`: yêu cầu session đã gắn của user đã xác minh; GET/HEAD ẩn danh ->302 `/auth/login?next=<encoded sanitized original admin path>`; method khác ->303 `/auth/login`, không ghi. Mount `app.use('/admin', ...)` trước mọi admin handler.
-- `createLoginRouter({ prisma, authConfig }) -> express.Router`: triển khai đầy đủ login dưới đây. Mỗi router tự gắn requireCsrf trên POST để test độc lập vẫn bảo vệ như tích hợp.
+| Route | Hành vi và phản hồi |
+| --- | --- |
+| GET /register | Form đăng ký + CAPTCHA; phiên CSRF ẩn danh, không auth |
+| POST /register | Rate limit → CSRF/validate → CAPTCHA backend → xử lý user/OTP. Email mới hoặc đã có: cùng 200 và thông báo chung, không trả trạng thái tồn tại. Input sai: 200 VALIDATION_FAILED |
+| GET /activate | Form email + OTP + gửi lại, không yêu cầu auth |
+| POST /activate | Rate limit → CSRF → kiểm tra pending/purpose/hạn/chưa dùng/giới hạn/hash. Sai/hết hạn/đã dùng/không có: cùng 200 INVALID_OTP. Đúng: 200, active + emailVerifiedAt + usedAt; không auto-login |
+| POST /activate/resend | Rate limit/cooldown → CSRF → nếu pending thì thay mã, giữ attempts/lockedUntil; phản hồi chung 200 cho mọi email. Quá giới hạn: 429 RATE_LIMITED |
+| GET /login | Form email/password; hiển thị CAPTCHA khi server xác định cần |
+| POST /login | Rate limit/lock → CSRF/validate → CAPTCHA nếu cần → verify password → kiểm tra active → tạo sid mới → 303 /admin/dishes |
+| POST /logout | CSRF → hủy session hiện tại ở server → expire cookie sid → 303 /login |
+| GET /logout | 404 hoặc 405 theo lựa chọn chung: chọn 404; không thay đổi dữ liệu |
+| GET /forgot | Form email, truy cập được khi chưa đăng nhập |
+| POST /forgot | Rate limit → CSRF/validate → phản hồi chung 200 cho email có/không có. Nếu đủ điều kiện thì sinh reset token, lưu hash, gửi link email |
+| GET /reset?token=... | Kiểm tra limiter IP chung GET/HEAD/POST reset, sau đó chỉ hiển thị form hoặc thông báo link không hợp lệ; quá giới hạn 429; không tiêu thụ token, không đổi password |
+| POST /reset | Rate limit → CSRF/validate → kiểm tra token → transaction đổi password/consume token/vô hiệu token khác/hủy mọi session của user → 303 /login; không auto-login |
+| CRUD /dishes, /dishes/:id và mọi /admin | Middleware trước handler: thiếu/invalid/expired session hoặc pending → 303 /login cho cả đọc và ghi, không truy vấn dữ liệu CRUD. User active được dùng CRUD; write cần CSRF |
 
-### Route và adapter đã chốt
+Login sai email/password dùng cùng thông báo, giữ email bỏ password. Kế hoạch chọn 200 cho lỗi form login, 200 với thông báo cần kích hoạt chỉ sau password đúng của pending; không suy ra 401/403 là bắt buộc trong slide. Chọn 200 INVALID_RESET_TOKEN cho reset token sai/hết hạn/đã dùng. 403 dành cho CSRF/origin sai; 429 cho giới hạn; 500 cho lỗi kỹ thuật. Các lựa chọn bổ sung này cần test nhất quán.
 
-Mọi router mới mount `/auth`, dùng EJS, không JSON. Handler async Express4 catch/next(error). Mọi auth response có `Cache-Control: no-store`, `Referrer-Policy: no-referrer`; admin đã xác thực có no-store. Session middleware cấp currentUser/csrfToken; không lộ hash/credential trong HTML/log.
+Slide 20 quy định 200 cho VALIDATION_FAILED/INVALID_OTP và 429 RATE_LIMITED; slide 54 yêu cầu 303 /login cho CRUD chưa auth. Mã lỗi là contract nội bộ/view-model (`ok, error.code`) và được render thành trang EJS; không tự đổi toàn bộ bài SSR thành JSON API. SMTP đồng bộ nếu dùng mà thất bại là lỗi kỹ thuật 500 theo slide; phương án ở mục 5 giảm rò rỉ tồn tại email bằng gửi bất đồng bộ.
 
-Module đăng ký export `validateRegistrationInput(body) -> {values:{email}, errors, password}` (không render password), `createSmtpMailer(env = process.env)`, `createRecaptchaVerifier(env = process.env, fetchImpl = globalThis.fetch)`, `createRegistrationRouter({ prisma, mailer, recaptchaVerifier, authConfig, logger = console })`.
+## 5. Luồng và điều kiện không được phá vỡ
 
-Mailer trả `{isConfigured(), sendVerificationEmail({to,verifyUrl}):Promise<void>}`. Dùng Nodemailer SMTP với SMTP_HOST, port mặc định587, SMTP_SECURE boolean, SMTP_USER/PASS tùy chọn, SMTP_FROM bắt buộc. Thiếu/sai cấu hình fail closed lúc gửi, không giả thành công; SMTP local có thể không auth. Email tiếng Việt text+HTML chứa link, escape nội suy HTML, không log link/token/credential. connectionTimeout/socketTimeout10000ms. Người tích hợp chạy `npm install nodemailer` một lần lấy stable hiện tại, giữ phiên bản resolve trong lockfile, không ghim khuyến nghị cũ.
+### Đăng ký, OTP và email
 
-CAPTCHA adapter trả `{isConfigured(),siteKey,verifyToken(token,remoteIp):Promise<{ok:boolean,reason:string|null}>}`. Google v2 checkbox; POST backend `https://www.google.com/recaptcha/api/siteverify` với URLSearchParams secret/response/remoteip tùy chọn; timeout10000ms; yêu cầu HTTP ok và JSON success===true. Token bị từ chối ->verification-failed; vắng token ->missing-input-response; thiếu key ->not-configured; mạng/timeout/JSON sai ->network-error. Hostname trả về phải khớp hostname APP_BASE_URL chuẩn hóa, không xét port; lệch ->verification-failed. Không production bypass; chỉ inject adapter test tường minh.
+1. Kiểm tra rate limit cả email/IP, khóa ActivationAttempt và CAPTCHA trước hash password, tạo user hoặc gửi OTP. Register và resend chia sẻ bucket gửi mã/cooldown cho mọi email trước khi rẽ nhánh tồn tại, nên đổi endpoint hoặc dùng email active/unknown không tạo phản hồi 429 khác chỉ vì trạng thái tài khoản.
+2. User mới: transaction tạo pending, role viewer do server gán (bỏ qua role/status/emailVerifiedAt từ body), lưu challenge hash. Dữ liệu response giữ email nhưng không password/OTP.
+3. Email pending đã có: **giữ passwordHash cũ**; xử lý như resend có cùng cooldown/giới hạn; không tạo user thứ hai. Email active: không sửa thông tin, cùng phản hồi chung.
+4. Register/activate/resend cùng khóa ActivationAttempt theo email trước, rồi khóa User nếu có, theo thứ tự thống nhất để tránh deadlock; tạo challenge mới kế thừa ngân sách/khóa theo email, không tự mở ngân sách mới. Dùng cùng transaction cho activate và resend. Activate chỉ thành công khi cả sáu điều kiện đúng; cập nhật status/emailVerifiedAt/usedAt nguyên tử; hai request OTP đúng đồng thời chỉ một thắng.
+5. Mỗi lần xác nhận OTP không hợp lệ tăng ActivationAttempt.attempts cho mọi email, kể cả active/unknown; nếu có challenge thì đồng bộ attempts/lockedUntil vào đó trong cùng transaction. Không làm active quay về pending, không tạo User/challenge giả. Kiểm tra khóa chung trước so hash; lần sai thứ 5 đặt khóa 15 phút và trả 429. Register/activate/resend cùng đọc khóa theo email này, nên sau cùng một chuỗi mã sai, email pending/active/unknown đều có cùng hành vi 429. Chỉ hết kỳ khóa mới reset ngân sách theo một chuyển trạng thái chung, không reset vì resend/đăng ký lại.
+6. Resend chỉ thay otpHash/expiresAt/lastSentAt/usedAt cho user vẫn pending, không reset attempts/lockedUntil. Hết hạn không kích hoạt tài khoản. Sau kích hoạt hiện link login, không tạo authenticated session.
+7. Phản hồi register/resend/forgot không chờ SMTP: commit dữ liệu rồi giao gửi thư bất đồng bộ sau response chung. Chỉ giữ mã thô tạm trong bộ nhớ phục vụ gửi, không persist plaintext/log. Đây là lựa chọn đơn giản của bài, không xây hàng đợi retry lớn; crash/gửi lỗi có thể mất thư, người dùng dùng resend/yêu cầu reset mới. Ghi lỗi đã che bí mật. Kiểm tra thời gian phản hồi giữa email có/không có để tránh chênh lệch rõ; không tuyên bố chống enumeration chỉ vì thông báo giống nhau.
 
-- **GET `/auth/register`**:200 form `{title,values:{email:''},errors:{},recaptchaSiteKey}`; user đã xác minh/đăng nhập ->302 `/admin/dishes`.
-- **POST `/auth/register`**: CSRF trước; validate email/password/confirmPassword rồi CAPTCHA trước ghi DB. Trường/token sai ->400; provider unavailable/not-configured ->503; không phản chiếu password/CAPTCHA. Email đã xác minh trùng ->400. Email mới: hash password, tạo user+token cùng interactive transaction. Email CHƯA xác minh: khóa User bằng parameterized SELECT FOR UPDATE, đọc lại sau lock; đã verified thì từ chối, nếu chưa thì thay passwordHash đang chờ, vô hiệu mọi token cũ chưa dùng, tạo token mới cùng transaction. Password mới chỉ dùng sau link mới tương ứng được verify. Không giữ password do kẻ tấn công đăng ký trước. Verify dùng cùng khóa, không cho link cũ xác minh password vừa thay hay ghi đè password verified. P2002 tạo user đồng thời ->400 duplicate/retry. SMTP sau commit; gửi lỗi503, account vẫn unverified và cho thử lại cùng email. Không gửi mail trong transaction/không auto-login. URL `<appBaseUrl>/auth/verify-email?token=<64hex>`; DB chỉ hash, mặc định24h. Gửi thành công ->201 result pending, không session cookie.
-- **GET `/auth/verify-email?token=...`**: thiếu/sai/không tồn tại/hết hạn/đã dùng ->400 result invalid/expired. Thành công200, link `/auth/login?verified=1`, không session. Một transaction: tìm token include user, parameterized User FOR UPDATE, tính now SAU lấy khóa, claim `emailVerificationToken.updateMany({where:{id,usedAt:null,expiresAt:{gt:now}},data:{usedAt:now}})`; chỉ count===1 mới cập nhật emailVerifiedAt nếu null. Count0/lỗi transaction không được partial verify/báo thành công. Concurrent consume đúng một thành công; token bị xóa/rotate trong resend có count0. View `{title,status,heading,message,actionHref,actionLabel}`, status pending/verified/invalid/expired.
-- **GET `/auth/login`**:200 form `{title,values:{email:'',next:sanitizeNextPath(query.next)},errors:{},notice}`; chỉ banner tiếng Việt cố định verified=1/loggedOut=1. Đã auth ->302 safe next.
-- **POST `/auth/login`**:CSRF trước; input sai400, unknown email/wrong password401 cùng thông báo chung, password đúng nhưng chưa verify403 không session. Verified credential tạo định danh session mới, chỉ xóa session cũ được trình ra,303 safe next hoặc `/admin/dishes`. Không tái dùng ID do client cấp. Form email/password/hidden next/hidden _csrf; không giữ password.
-- **Logout** export `createLogoutRouter({ prisma, authConfig }) -> express.Router`. POST `/auth/logout` requireCsrf; deleteMany theo hash của `req.auth.rawToken || req.cookies[sessionCookieName]` nếu đúng định dạng; sau thành công clear cookie rồi303 `/auth/login?loggedOut=1`. DB deletion lỗi ->next(error), không success redirect/không báo thành công bằng cookie-only logout. Anonymous CSRF hợp lệ với session thiếu/đã xóa ->303 idempotent. Replay CSRF session cũ không có anonymous CSRF hợp lệ có thể403. GET `/auth/logout` không đăng ký ->404, không logout. Session khác giữ nguyên.
+### Login, session, CSRF và CRUD
 
-### Cấu hình và tích hợp
+- Với login, quyết định CAPTCHA từ counter ở server ngay trong POST, không tin UI. Nếu đạt ngưỡng ở POST đầu tiên chưa có widget, render lại form yêu cầu CAPTCHA. Token mới mỗi lần, không cấp cờ vượt CAPTCHA vĩnh viễn. Khi đang khóa, password/CAPTCHA đúng vẫn 429.
+- Sai password tăng counter nguyên tử theo email tồn tại/không tồn tại như nhau. Unknown user vẫn chạy dummy password verify phù hợp để giảm chênh lệch thời gian. CAPTCHA sai không thử password nhưng request vẫn tính vào limiter.
+- Chỉ password đúng + active + tạo session thành công mới xóa failedCount theo email. Login thay sid ẩn danh/cũ bằng sid mới; tạo session và thu hồi sid cũ trong transaction, chỉ Set-Cookie sau commit. Giữ các phiên khác.
+- Middleware kiểm tra session còn hạn tuyệt đối và chưa quá idle trước khi cập nhật lastSeenAt. Update không được tái tạo row bị logout xóa hoặc hồi sinh phiên hết hạn. Store outage là 500, không giả là anonymous/đăng xuất thành công. Dọn session hết hạn bằng script định kỳ; auth vẫn phải kiểm tra hạn dù chưa dọn.
+- Form GET auth có thể tạo session CSRF ẩn danh. requireLogin đòi userId + user active + emailVerifiedAt; anonymous cookie không được vào CRUD. Form POST so sánh CSRF với session và kiểm tra Origin khi có; nếu không Origin thì kiểm tra Referer khi có. Thiếu cả hai vẫn phải có CSRF hợp lệ. Không chỉ dựa vào SameSite.
+- CSRF áp cho register/activate/resend/login/logout/forgot/reset và mọi POST/PATCH/DELETE quản lý, kể cả method-override và các quan hệ.
+- Static files không cần DB/auth; dynamic auth và mọi trang dữ liệu được bảo vệ (cả /dishes lẫn /admin) dùng Cache-Control: no-store. Trang reset thêm Referrer-Policy: no-referrer và không tải tài nguyên bên thứ ba mang token trên URL.
+- Giới hạn phạm vi cookie host-only; cookie hết hạn có cùng name/path/domain như lúc tạo. HTTPS + Secure khi deploy; cấu hình HTTP loopback test được công bố, không coi đó là bằng chứng cờ Secure production.
 
-Giữ DATABASE_URL/PORT; thêm APP_BASE_URL=http://localhost:3001, SESSION_COOKIE_NAME=soucha_session, SESSION_TTL_HOURS=24, EMAIL_VERIFY_TTL_HOURS=24, SMTP_HOST, SMTP_PORT=587, SMTP_SECURE=false, SMTP_USER, SMTP_PASS, SMTP_FROM, RECAPTCHA_SITE_KEY, RECAPTCHA_SECRET_KEY vào `.env.example`. Secret cung cấp riêng, không commit. SMTP sender/domain và v2 site/secret cho hostname thật là điều kiện bên ngoài. Production APP_BASE_URL phải public HTTPS. Thiếu provider vẫn chạy menu/login, registration503 không fake verify.
+### Logout và reset password
 
-Factory mới `createApp({prisma,logger=console,mailer,recaptchaVerifier,authConfig:authConfigOverrides} = {})`. Resolve một lần; CAPTCHA factory thật nhận `{...process.env,APP_BASE_URL:authConfig.appBaseUrl,RECAPTCHA_SITE_KEY:authConfig.recaptchaSiteKey,RECAPTCHA_SECRET_KEY:authConfig.recaptchaSecretKey}` cho hostname/key khớp override. Body parser/methodOverride trước session; rồi `/auth` no-store/no-referrer +3 router; `/admin` no-store/auth guard/write-CSRF trước handler/404/error. Static trước lookup DB. Header anonymous menu+login/register; authenticated menu+management+escaped email+POST logout. Thêm hidden `_csrf` vào mọi POST form: admin/form:3,delete:2,unlink:7,dish-detail:54,dish-ingredient-edit:14,chef-detail:40. Login/register/header logout cũng có; GET search/sort công khai không cần. Caller createApp prisma/logger hiện tại vẫn dùng được vì injection tùy chọn, không thêm compatibility shim.
+- Logout hủy đúng sid hiện tại, await store trước clear-cookie/303. Cookie-only logout không đạt. DB lỗi không báo thành công. GET không có side effect. Back có thể hiện cache nhưng request mới phải bị chặn.
+- Request logout không có session/CSRF hợp lệ: chọn 403; session còn hợp lệ nhưng anonymous có CSRF hợp lệ thì có thể hủy phiên form và 303. Không cần bảo đảm thành công cho việc replay nguyên request logout cũ.
+- Forgot dùng cùng phản hồi/status/luật throttle cho mọi email. Chọn hỗ trợ user pending lẫn active; reset **không kích hoạt pending**, vẫn phải OTP. Link được tạo từ APP_BASE_URL tin cậy, không lấy Host tùy ý; HTTPS khi deploy.
+- GET/HEAD reset chạy limiter IP chung với POST trước khi kiểm tra token; vượt ngưỡng trả 429 nhưng không tiêu thụ token. GET reset chỉ đọc auth/reset state, không đánh usedAt hay hủy session. Token được đưa vào hidden input để POST lại; đây là token do người dùng đã mang từ link email, không phải API forgot trả token mới. Không log query token/body password.
+- POST reset giữ một transaction với khóa User và điều kiện token chưa dùng/chưa hết hạn/chưa invalidated. Đổi passwordHash + usedAt + vô hiệu mọi reset token chưa dùng + xóa mọi session của user trong cùng transaction. Thất bại rollback toàn bộ. Gửi thư báo đã đổi (không chứa password), redirect login, không reset failed-login counter để lách khóa.
+- Login/reset dùng chung khóa User; nếu password được verify trước khi khóa thì login phải đọc lại passwordHash/status dưới khóa. Password đã thay giữa hai bước phải bị từ chối. Không được tạo session từ password cũ sau khi reset hoàn tất.
+- Hai request reset cùng token chỉ một thắng; reset cũ sau yêu cầu mới thất bại. Các route chỉ chấp nhận credential đúng purpose: OTP không làm password, reset token không làm sid/OTP hoặc credential CRUD.
 
-CRUD hiện có: dishes/chefs/ingredients list/new/create/edit/PATCH/delete-confirm/DELETE (`src/app.js:63-130`), dish detail+ingredient links (`:163-283`), chef detail+dish links (`:313-378`). Bảo vệ prefix, không liệt kê chọn lọc endpoint. Anonymous write không chạy restaurant Prisma operation. Giữ validation/redirect CRUD khi authenticated. Giữ DB URL redaction, thêm SMTP_PASS/RECAPTCHA_SECRET_KEY/provider URL; không log password/session/email token thô/provider payload.
+## 6. Thứ tự, file ownership và triển khai
 
-## Kiểm chứng
+1. **Đối chiếu/setup:** đọc checklist, kiểm tra git diff và dependencies. Chạy npm ci rồi baseline test. Lưu ảnh/chỉ số hiện trạng theo nhu cầu. Chưa có dependency/provider không được coi là chức năng đã đạt.
+2. **Nền tảng do một người tích hợp:** schema; helper config/credentials/session/throttle/captcha/mail; Prisma client; cấu hình .env.example; middleware và contract test fixture. Không tạo stub/no-op để báo hoàn thành. Các module nền tảng không import feature router chưa tồn tại.
+3. **Feature:** có thể làm tuần tự hoặc chia phần sau khi nền tảng chạy thật: đăng ký/OTP, login, logout, forgot/reset theo các plan liên kết. Đăng ký có thêm views activate; reset có views forgot/reset. Người tích hợp quản lý mọi file chung.
+4. **Tích hợp:** mount router thật ở root, guard /dishes và /dishes/:id cùng toàn prefix /admin, CSRF mọi form, header login/register/logout, thống nhất error view/route/status và sửa test cũ đang cho đọc/ghi nhà hàng khi chưa đăng nhập.
+5. **Seed/test/evidence:** script seed-auth riêng, test HTTP isolated, test DB thử nghiệm, email/CAPTCHA provider thật, restart session thật và checklist slide. Không dùng seed nhà hàng có thể xóa dữ liệu để tạo tài khoản auth.
+6. **Review:** đối chiếu checklist và code độc lập; sửa findings rồi chạy lại phần bị ảnh hưởng; cập nhật README và bằng chứng. Không đánh dấu pass khi chỉ đọc code hoặc chạy mock.
 
-Giai đoạn lập kế hoạch chỉ kiểm tra source; chưa chạy các kiểm chứng triển khai dưới đây.
+| Người/module | File được phụ trách khi code |
+| --- | --- |
+| Người tích hợp/login | package.json/lock, schema, server.js, src/app.js, src/auth/{config,credentials,session,throttle,captcha,mail,login}.js; header và mọi form admin; views/auth/login.ejs; tests shared/login/session; README/.env.example; prisma/seed-auth.js; script dọn session |
+| Đăng ký/OTP | src/auth/registration.js; views/auth/register.ejs, activate.ejs; tests/auth-registration.test.js |
+| Logout | src/auth/logout.js; tests/auth-logout.test.js |
+| Forgot/reset | src/auth/password-reset.js; views/auth/forgot.ejs, reset.ejs; tests/auth-password-reset.test.js |
 
-Sau nền tảng và3 nhánh tích hợp, chạy `npm test` hiện có (`node --test tests/*.test.js`). Test chuyên biệt có fixture riêng; không tranh sửa fake Prisma chung. Fake auth delegate mô phỏng callback transaction/conditional update count/rollback ở test cần thiết; khóa/concurrency phải chứng minh bằng PostgreSQL thật. Cập nhật app tests với verified user/session/cookie/form CSRF, giữ assertion CRUD; chủ ý thay giả định admin công khai.
+Không bắt buộc nhiều agent. Nếu chia việc, mỗi người không sửa file chung của người khác; phát hiện contract thiếu thì trao đổi với người tích hợp. Tất cả feature dùng helper chung, không có schema/cookie/normalization riêng.
 
-Chạy `npm run db:generate`, `npm run db:push` với DATABASE_URL disposable đã cung cấp tường minh, sau đó live smoke đã điều chỉnh. Không seed/SQL phá hủy dữ liệu người dùng. Interface test `AUTH_SMOKE_*` và `LIVE_SMOKE_ALLOW_DB_WRITE=1` được chốt tại plan đăng nhập; test config inject, không production bypass.
+## 7. Cấu hình, seed và chạy kiểm chứng
 
-Phải quan sát: public anonymous vẫn hoạt động; `/admin` anonymous read302/write303 không mutation; đăng ký qua widget v2 thật gửi email đến inbox kiểm soát, verify cho phép login nhưng không auto-auth; CAPTCHA lỗi/provider lỗi không verified account; unverified login403; verified login cấp cookie đúng thuộc tính và session hash DB; entity/association writes với CSRF thành công, thiếu CSRF403; session expired/deleted bị từ chối; process restart cùng DB/unexpired cookie vẫn authenticated; logout xóa đúng session, cookie capture replay bị từ chối. Verify token concurrent đúng một thành công với PostgreSQL thật. Kiểm tra UI register/login/result/header/logout, đóng tab. Injected mail/CAPTCHA tests không thay real-provider proof.
+Cấu hình qua .env.example, chỉ placeholder: DATABASE_URL, PORT, APP_BASE_URL; SESSION_IDLE_MINUTES/SESSION_MAX_HOURS; các TTL/threshold ở mục 2; SMTP_HOST/PORT/SECURE/USER/PASS/FROM; cấu hình reCAPTCHA đúng adapter (v3 site/secret hoặc Cloud project/site + credential server riêng); AUTH_SEED_EMAIL/AUTH_SEED_PASSWORD. Không commit .env, password seed, key hay credential. Không gửi credential server vào EJS; chỉ site key được công khai.
 
-Sau triển khai có reviewer độc lập effort medium trở xuống kiểm tra diff/security/ownership/hành vi; sửa finding rồi chạy lại smoke bị ảnh hưởng. Thiếu prerequisite phải báo chính xác; hoàn thành mọi test có thể chạy, không khẳng định real mail/CAPTCHA thành công khi chưa quan sát.
+Script `prisma/seed-auth.js` tạo ít nhất một user active có emailVerifiedAt và password hash từ env để demo login/forgot/CRUD (slide 49 notes). Chỉ chạy tường minh; nếu email đã có thì không ghi đè password/status hoặc tự kích hoạt pending. Không xóa dữ liệu khác, không seed lúc server khởi động.
 
-## Giả định và phương án dự phòng
+Khi triển khai: npm ci → npm run db:generate → áp schema đã review vào DB thử nghiệm riêng → npm test và browser/live tests phù hợp. `npm run test:live` cũ là read-only CRUD; nếu bổ sung test ghi phải tách lệnh hoặc có opt-in rõ và DATABASE_URL thử nghiệm được chọn, chỉ cleanup dữ liệu của lần test. Không chạy db:push/seed trên DB dùng chung trong lúc lập plan.
 
-Mặc định v2 checkbox, SMTP, session/verify TTL tuyệt đối24h, logout current-session-only, mọi verified account dùng CRUD (không role mới). Người dùng có thể đổi trước triển khai; nếu không các lựa chọn đã chốt. Re-register unverified email thay pending credential nguyên tử và vô hiệu link cũ; không thêm password reset verified account. Plan mode chỉ lưu local://, không tạo Markdown repository trước phê duyệt.
+Nhánh giả lập SMTP/CAPTCHA chỉ được inject vào test; thiếu provider thật phải báo phần chưa kiểm chứng, không thêm bypass app. Test khóa/transaction/đua request cần PostgreSQL thật; mock không chứng minh được tính nguyên tử.
 
-Thiếu SMTP/Google keys/inbox: triển khai adapter thật, chạy injected coverage nhưng đánh dấu real-provider smoke blocked và nêu prerequisite. Thiếu DB disposable: hoàn thành fake-Prisma tests, báo live persistence/concurrency blocked; không trỏ schema push vào DB hiện hữu tùy ý. Không thay bằng JSON API, fake mail success, CAPTCHA bypass hoặc in-memory production sessions.
+## 8. Nghiệm thu và bằng chứng
+
+Dùng [checklist đối chiếu](auth-acceptance-checklist.md), chưa đánh dấu hoàn thành trước runtime. Lưu dưới `restaurant/evidence/auth/` khi chạy nghiệm thu; không tạo ảnh/video giả.
+
+Với từng kịch bản: kết quả UI, Network, Application/Cookies, request trực tiếp và bản ghi DB phù hợp; che token/password/OTP/secrets. Nhóm tự vẽ sơ đồ đăng ký+CAPTCHA+OTP, login+brute force, logout, forgot/reset. Ghi ít nhất một lỗi thực tế do agent tạo ra, cách tái hiện, diff sửa và bằng chứng sau sửa; không bịa lỗi để đủ mục.
+
+Các câu trình bày ở slide 62 được giải thích trong evidence/README: session khác cookie; session store/restart; CAPTCHA và giới hạn thử; pending/resend attempts; public/protected routes; reset token và vô hiệu phiên cũ.

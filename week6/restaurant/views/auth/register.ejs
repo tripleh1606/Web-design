@@ -1,0 +1,11 @@
+<%- include('../partials/header', { title }) %>
+<section class="admin-content"><h1>Đăng ký</h1>
+<% Object.values(errors).forEach(error => { %><p class="form-alert" role="alert"><%= error %></p><% }) %>
+<form method="POST" action="/auth/register" class="form-card">
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<label>Email <input type="email" name="email" maxlength="120" value="<%= values.email %>" autocomplete="email" required></label>
+<label>Mật khẩu <input type="password" name="password" minlength="8" maxlength="128" autocomplete="new-password" required></label>
+<label>Xác nhận mật khẩu <input type="password" name="confirmPassword" minlength="8" maxlength="128" autocomplete="new-password" required></label>
+<div class="g-recaptcha" data-sitekey="<%= recaptchaSiteKey %>"></div><button type="submit">Đăng ký</button>
+</form></section><script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<%- include('../partials/footer') %>

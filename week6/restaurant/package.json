@@ -19,7 +19,8 @@
     "dotenv": "^16.6.1",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
-    "method-override": "^3.0.0"
+    "method-override": "^3.0.0",
+    "nodemailer": "^10.3.1"
   },
   "devDependencies": {
     "prisma": "6.12.0"

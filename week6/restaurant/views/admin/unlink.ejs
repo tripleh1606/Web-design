@@ -6,6 +6,7 @@
     <h1><%= heading %></h1>
     <p><%= message %></p>
     <form method="POST" action="<%= action %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <button class="button danger" type="submit">Xác nhận gỡ</button>
       <a class="button secondary" href="<%= cancelHref %>">Giữ lại</a>
     </form>

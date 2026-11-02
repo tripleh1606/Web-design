@@ -4,6 +4,8 @@ const methodOverride = require('method-override');
 const { resources, parseId, validate, valuesFromRecord } = require('./validation');
 const { categories, categoryLabel, formatVND } = require('./soucha-menu');
 const { servingsPossible } = require('./recipe');
+const { resolveAuthConfig, attachSessionMiddleware, requireAdminAuth, requireCsrf, createRecaptchaVerifier, createLoginRouter, createLogoutRouter } = require('./auth/session');
+const { createSmtpMailer, createRegistrationRouter } = require('./auth/registration');
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
@@ -13,7 +15,7 @@ function parsePositiveInt(value) {
   return Number.isSafeInteger(n) && n <= 2147483647 ? n : null;
 }
 
-function createApp({ prisma, logger = console }) {
+function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authConfig: overrides } = {}) {
   if (!prisma) throw new Error('A Prisma client is required.');
 
   const app = express();
@@ -27,6 +29,14 @@ function createApp({ prisma, logger = console }) {
   app.use(express.static(path.join(__dirname, '..', 'public')));
   app.locals.categoryLabel = categoryLabel;
   app.locals.formatVND = formatVND;
+  const authConfig = resolveAuthConfig(overrides);
+  const captcha = recaptchaVerifier || createRecaptchaVerifier({ ...process.env, APP_BASE_URL: authConfig.appBaseUrl, RECAPTCHA_SITE_KEY: authConfig.recaptchaSiteKey, RECAPTCHA_SECRET_KEY: authConfig.recaptchaSecretKey });
+  app.use(attachSessionMiddleware({ prisma, authConfig }));
+  app.use('/auth', (_req, res, next) => { res.set('Cache-Control', 'no-store'); res.set('Referrer-Policy', 'no-referrer'); next(); });
+  app.use('/auth', createRegistrationRouter({ prisma, mailer: mailer || createSmtpMailer(), recaptchaVerifier: captcha, authConfig, logger }));
+  app.use('/auth', createLoginRouter({ prisma, recaptchaVerifier: captcha, authConfig }));
+  app.use('/auth', createLogoutRouter({ prisma, authConfig }));
+  app.use('/admin', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, requireAdminAuth, (req, res, next) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : requireCsrf(req, res, next));
 
   const notFound = (res, back = '/dishes') => res.status(404).render('error', {
     title: 'Không tìm thấy',
@@ -384,9 +394,9 @@ function createApp({ prisma, logger = console }) {
   app.use((_req, res) => notFound(res));
   app.use((error, _req, res, _next) => {
     // Keep credentials and raw connection URLs out of both logs and responses.
-    const secret = process.env.DATABASE_URL;
-    const message = String(error.message || '').replaceAll(secret || '\0', '[redacted]')
-      .replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted database URL]');
+    let message = String(error.message || '');
+    for (const secret of [process.env.DATABASE_URL, process.env.SMTP_PASS, authConfig.recaptchaSecretKey]) if (secret) message = message.replaceAll(secret, '[redacted]');
+    message = message.replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted database URL]').replace(/https:\/\/www\.google\.com\/recaptcha\/api\/siteverify\S*/gi, '[redacted provider URL]');
     logger.error('Restaurant SSR error:', error.name, error.code || 'UNKNOWN', message);
     if (res.headersSent) return res.end();
     res.status(500).render('error', {

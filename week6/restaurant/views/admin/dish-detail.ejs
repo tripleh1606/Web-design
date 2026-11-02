@@ -53,6 +53,7 @@
     <h2>Thêm nguyên liệu</h2>
     <% if (availableIngredients.length) { %>
       <form class="form-card relation-form" method="POST" action="/admin/dishes/<%= dish.id %>/ingredients" novalidate>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <% if (Object.keys(errors).length) { %><div class="form-alert" role="alert">Vui lòng kiểm tra các trường bên dưới.</div><% } %>
         <div class="field">
           <label for="field-ingredientId">Nguyên liệu *</label>

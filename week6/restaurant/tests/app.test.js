@@ -2,6 +2,9 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { createApp } = require('../src/app');
 const { servingsPossible } = require('../src/recipe');
+const { hashToken } = require('../src/auth/session');
+const SESSION = 'a'.repeat(64);
+const CSRF = 'b'.repeat(64);
 
 function sortRows(rows, orderBy = {}) {
   const [[key, dir] = []] = Object.entries(orderBy);
@@ -110,6 +113,7 @@ function fakePrisma() {
   }
 
   const client = {
+    session: { async findUnique({ where }) { return where.tokenHash === hashToken(SESSION) ? { tokenHash: where.tokenHash, csrfToken: CSRF, expiresAt: new Date(Date.now() + 3600000), user: { id: 1, email: 'admin@example.com', emailVerifiedAt: new Date() } } : null; } },
     dish: crud('dish'),
     chef: crud('chef'),
     ingredient: crud('ingredient'),
@@ -125,7 +129,12 @@ async function withApp(callback) {
   try {
     await new Promise((resolve) => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
-    const request = (path, options = {}) => fetch(base + path, { redirect: 'manual', ...options });
+    const request = (path, options = {}) => {
+      const headers = { connection: 'close', cookie: `soucha_session=${SESSION}`, ...options.headers };
+      const body = options.body instanceof URLSearchParams ? new URLSearchParams(options.body) : options.body;
+      if (body instanceof URLSearchParams) body.set('_csrf', CSRF);
+      return fetch(base + path, { redirect: 'manual', ...options, headers, body });
+    };
     await callback({ request, tables, client });
   } finally {
     await new Promise((resolve) => server.close(resolve));

@@ -69,3 +69,56 @@ model ChefDish {
   @@id([chefId, dishId])
   @@map("chef_dishes")
 }
+
+model User {
+  id                 Int                      @id @default(autoincrement())
+  email              String                   @unique
+  passwordHash       String
+  emailVerifiedAt    DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  sessions           Session[]
+  verificationTokens EmailVerificationToken[]
+  @@map("users")
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  csrfToken String
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model EmailVerificationToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  userId    Int
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+model LoginAttempt {
+  email       String   @id
+  failures    Int      @default(0)
+  lastFailure DateTime
+  lockedUntil DateTime?
+  @@map("login_attempts")
+}
+
+model LoginIpLimit {
+  ip          String   @id
+  count       Int
+  windowStart DateTime
+  @@map("login_ip_limits")
+}

@@ -1,0 +1,2 @@
+<script src="/recaptcha.js" defer></script>
+<% if (recaptchaSiteKey) { %><script src="https://www.google.com/recaptcha/api.js?render=<%= encodeURIComponent(recaptchaSiteKey) %>" async defer></script><% } %>

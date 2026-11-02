@@ -5,7 +5,7 @@ const { hashPassword, hashToken, createRecaptchaVerifier } = require('../src/aut
 
 async function fixture(fn) {
   const attempts = new Map(), ips = new Map(), sessions = new Map();
-  const user = { id: 1, email: 'user@example.com', passwordHash: await hashPassword('password123'), emailVerifiedAt: new Date() };
+  const user = { id: 1, email: 'user@example.com', status: 'active', passwordHash: await hashPassword('password123'), emailVerifiedAt: new Date() };
   const prisma = {
     dish: {}, chef: {}, ingredient: {}, dishIngredient: {}, chefDish: {},
     async $executeRaw() {}, async $transaction(fn) { return fn(this); },
@@ -38,7 +38,7 @@ async function fixture(fn) {
 test('CAPTCHA checks hostname, provider and missing configuration', async () => {
   const env = { APP_BASE_URL: 'https://example.com', RECAPTCHA_SITE_KEY: 'site', RECAPTCHA_SECRET_KEY: 'secret' };
   let submitted;
-  const verifier = createRecaptchaVerifier(env, async (_url, options) => { submitted = options.body; return { ok: true, async json() { return { success: true, hostname: 'example.com' }; } }; });
+  const verifier = createRecaptchaVerifier(env, async (_url, options) => { submitted = options.body; return { ok: true, async json() { return { success: true, hostname: 'example.com', action: 'login', score: 0.9, challenge_ts: new Date().toISOString() }; } }; });
   assert.equal((await verifier.verifyToken('challenge', '127.0.0.1')).ok, true);
   assert.equal(submitted.get('secret'), 'secret');
   assert.equal((await createRecaptchaVerifier(env, async () => ({ ok: true, async json() { return { success: true, hostname: 'evil.example' }; } })).verifyToken('x')).ok, false);
@@ -49,7 +49,7 @@ test('CAPTCHA checks hostname, provider and missing configuration', async () => 
 test('login checks CAPTCHA, CSRF, lockout and reset by normalized unknown email', async () => fixture(async ({ login, attempts, ips }) => {
   assert.equal((await login('missing@example.com', 'bad', { csrf: false })).status, 403);
   assert.equal((await login('missing@example.com', 'bad', { captchaToken: '' })).status, 400);
-  for (let i = 0; i < 3; i++) assert.equal((await login(' Missing@Example.com ', 'bad')).status, 401);
+  for (let i = 0; i < 3; i++) assert.equal((await login(' missing@Example.com ', 'bad')).status, 401);
   let row = attempts.get('missing@example.com');
   assert.equal(row.failures, 3);
   assert.ok(row.lockedUntil - row.lastFailure === 30000);
@@ -65,19 +65,19 @@ test('login checks CAPTCHA, CSRF, lockout and reset by normalized unknown email'
 
 test('verified login issues hashed session and protects admin with CSRF', async () => fixture(async ({ login, attempts, sessions, user, base }) => {
   assert.equal((await login('user@example.com', 'wrong')).status, 401);
-  const response = await login('USER@example.com', 'password123');
+  const response = await login('user@EXAMPLE.com', 'password123');
   assert.equal(response.status, 303); assert.equal(attempts.has('user@example.com'), false);
   const cookie = response.headers.get('set-cookie').match(/soucha_session=([a-f0-9]+)/)[1];
   assert.ok(sessions.has(hashToken(cookie))); assert.equal(sessions.has(cookie), false);
   assert.match(response.headers.get('set-cookie'), /HttpOnly/); assert.match(response.headers.get('set-cookie'), /SameSite=Lax/);
-  assert.equal((await fetch(base + '/admin/dishes', { redirect: 'manual' })).status, 302);
+  assert.equal((await fetch(base + '/admin/dishes', { redirect: 'manual' })).status, 303);
   const denied = await fetch(base + '/admin/dishes', { method: 'POST', redirect: 'manual', headers: { cookie: `soucha_session=${cookie}`, 'content-type': 'application/x-www-form-urlencoded' }, body: 'name=bad' });
   const sessionCsrf = sessions.get(hashToken(cookie)).csrfToken;
   const crossOrigin = await fetch(base + '/admin/dishes', { method: 'POST', redirect: 'manual', headers: { cookie: `soucha_session=${cookie}`, origin: 'https://evil.example', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: sessionCsrf }) });
   assert.equal(crossOrigin.status, 403);
   assert.equal(denied.status, 403);
   user.emailVerifiedAt = null;
-  assert.equal((await fetch(base + '/admin/dishes', { redirect: 'manual', headers: { cookie: `soucha_session=${cookie}` } })).status, 302);
+  assert.equal((await fetch(base + '/admin/dishes', { redirect: 'manual', headers: { cookie: `soucha_session=${cookie}` } })).status, 303);
 }));
 test('progressive lockout reaches fifteen minutes and IP limiting returns Retry-After', async () => fixture(async ({ login, attempts, ips }) => {
   for (let i = 0; i < 9; i++) {

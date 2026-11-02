@@ -16,7 +16,7 @@ function parsePositiveInt(value) {
   return Number.isSafeInteger(n) && n <= 2147483647 ? n : null;
 }
 
-function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authConfig: overrides } = {}) {
+function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authConfig: overrides, clock } = {}) {
   if (!prisma) throw new Error('A Prisma client is required.');
 
   const app = express();
@@ -32,14 +32,23 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
   app.locals.formatVND = formatVND;
   const authConfig = resolveAuthConfig(overrides);
   const captcha = recaptchaVerifier || createRecaptchaVerifier({ ...process.env, APP_BASE_URL: authConfig.appBaseUrl, RECAPTCHA_SITE_KEY: authConfig.recaptchaSiteKey, RECAPTCHA_SECRET_KEY: authConfig.recaptchaSecretKey });
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/auth/') || ['/register', '/activate', '/activate/resend', '/login', '/forgot', '/reset'].includes(req.path)) res.set('Cache-Control', 'no-store');
+    next();
+  });
   app.use(attachSessionMiddleware({ prisma, authConfig }));
   app.use('/auth', (_req, res, next) => { res.set('Cache-Control', 'no-store'); res.set('Referrer-Policy', 'no-referrer'); next(); });
-  app.use('/auth', createRegistrationRouter({ prisma, mailer: mailer || createSmtpMailer(), recaptchaVerifier: captcha, authConfig, logger }));
-  app.use('/auth', createLoginRouter({ prisma, recaptchaVerifier: captcha, authConfig }));
+  const registrationRouter = createRegistrationRouter({ prisma, mailer: mailer || createSmtpMailer(), recaptchaVerifier: captcha, authConfig, logger, clock });
+  app.use('/', registrationRouter);
+  app.use('/auth', registrationRouter); // Compatibility for existing bookmarks; new forms use root URLs.
+  const loginRouter = createLoginRouter({ prisma, recaptchaVerifier: captcha, authConfig });
+  app.use('/auth', loginRouter);
+  app.use('/', loginRouter);
   app.use('/auth', createLogoutRouter({ prisma, authConfig }));
   const resetRouter = createPasswordResetRouter({ prisma, mailer: mailer || createSmtpMailer(), authConfig, logger });
   app.use('/auth', resetRouter);
   app.use('/', resetRouter);
+  app.use('/dishes', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, requireAdminAuth);
   app.use('/admin', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, requireAdminAuth, (req, res, next) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : requireCsrf(req, res, next));
 
   const notFound = (res, back = '/dishes') => res.status(404).render('error', {
@@ -56,7 +65,7 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
     const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 120) : '';
     const sort = ['price-asc', 'price-desc'].includes(req.query.sort) ? req.query.sort : 'default';
     const where = {
-      ...(q ? { name: { contains: q, mode: 'insensitive' } } : {}),
+      ...(q ? { name: { contains: q } } : {}),
       ...(category ? { category } : {})
     };
     const dishes = await prisma.dish.findMany({
@@ -397,11 +406,9 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
 
   app.use((_req, res) => notFound(res));
   app.use((error, _req, res, _next) => {
-    // Keep credentials and raw connection URLs out of both logs and responses.
-    let message = String(error.message || '');
-    for (const secret of [process.env.DATABASE_URL, process.env.SMTP_PASS, authConfig.recaptchaSecretKey]) if (secret) message = message.replaceAll(secret, '[redacted]');
-    message = message.replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted database URL]').replace(/https:\/\/www\.google\.com\/recaptcha\/api\/siteverify\S*/gi, '[redacted provider URL]');
-    logger.error('Restaurant SSR error:', error.name, error.code || 'UNKNOWN', message);
+    // Prisma/provider messages can embed query arguments. Log bounded identifiers only.
+    const code = typeof error.code === 'string' && /^[A-Z][A-Z0-9_]{0,39}$/.test(error.code) ? error.code : 'UNKNOWN';
+    logger.error('Restaurant SSR error:', { code });
     if (res.headersSent) return res.end();
     res.status(500).render('error', {
       title: 'Có lỗi xảy ra', status: 500,

@@ -1,4 +1,6 @@
+const { lockDatabaseWrite } = require('./database-lock');
 const express = require('express');
+const { validEmail } = require('./credentials');
 const {
   normalizeEmail,
   hashPassword,
@@ -9,7 +11,6 @@ const {
 } = require('./session');
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_REGEX = /^[a-f0-9]{64}$/;
 
 function getClientIp(req) {
@@ -24,11 +25,7 @@ async function checkRateLimit(prisma, key, maxRequests, windowMs) {
   const now = new Date();
   if (prisma && prisma.passwordResetLimit) {
     return await prisma.$transaction(async tx => {
-      if (typeof tx.$executeRaw === 'function') {
-        try {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`limit:${key}`}, 0))`;
-        } catch {}
-      }
+      await lockDatabaseWrite(tx);
       const row = await tx.passwordResetLimit.findUnique({ where: { key } });
       if (!row || (now.getTime() - new Date(row.windowStart).getTime()) >= windowMs) {
         await tx.passwordResetLimit.upsert({
@@ -134,8 +131,8 @@ function createPasswordResetRouter({ prisma, mailer, authConfig, logger = consol
     }
 
     // 3. Validate email format
-    if (!email || email.length > 120 || !EMAIL_REGEX.test(email)) {
-      return renderForgot(res, 400, email.slice(0, 120), { email: 'Email không hợp lệ.' });
+    if (!validEmail(email)) {
+      return renderForgot(res, 400, email.slice(0, 254), { email: 'Email không hợp lệ.' });
     }
 
     // 4. Look up user
@@ -146,17 +143,7 @@ function createPasswordResetRouter({ prisma, mailer, authConfig, logger = consol
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes lifetime
 
       await prisma.$transaction(async tx => {
-        if (typeof tx.$executeRaw === 'function') {
-          try {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`reset-user:${user.id}`}, 0))`;
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`login-email:${user.email}`}, 0))`;
-          } catch {}
-        }
-        if (typeof tx.$queryRaw === 'function') {
-          try {
-            await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id} FOR UPDATE`;
-          } catch {}
-        }
+        await lockDatabaseWrite(tx);
 
         // Invalidate all prior unused tokens for this user
         await tx.passwordReset.updateMany({
@@ -265,6 +252,7 @@ function createPasswordResetRouter({ prisma, mailer, authConfig, logger = consol
     }
 
     const outcome = await prisma.$transaction(async tx => {
+      await lockDatabaseWrite(tx);
       const now = new Date();
       const tokenRecord = await tx.passwordReset.findUnique({
         where: { tokenHash: hashToken(rawToken) }
@@ -274,25 +262,8 @@ function createPasswordResetRouter({ prisma, mailer, authConfig, logger = consol
         return { invalid: true };
       }
 
-      if (typeof tx.$executeRaw === 'function') {
-        try {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`reset-user:${tokenRecord.userId}`}, 0))`;
-        } catch {}
-      }
-      if (typeof tx.$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id FROM users WHERE id = ${tokenRecord.userId} FOR UPDATE`;
-        } catch {}
-      }
-
       const user = await tx.user.findUnique({ where: { id: tokenRecord.userId } });
       if (!user) return { invalid: true };
-
-      if (typeof tx.$executeRaw === 'function') {
-        try {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`login-email:${user.email}`}, 0))`;
-        } catch {}
-      }
 
       // Conditionally claim the token
       const claim = await tx.passwordReset.updateMany({

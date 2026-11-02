@@ -30,10 +30,10 @@ if (process.env.AUTH_SMOKE_CHILD === '1') {
     async function stop() { if (!child) return; const c = child; child = null; await new Promise((resolve, reject) => { const timer = setTimeout(() => { c.kill('SIGKILL'); reject(new Error('Child stop timed out')); }, 10000); c.once('exit', () => { clearTimeout(timer); resolve(); }); c.send('stop'); }); }
     const base = `http://127.0.0.1:${port}`;
     try {
-      user = await prisma.user.create({ data: { email, passwordHash: await hashPassword(password), emailVerifiedAt: new Date() } });
+      user = await prisma.user.create({ data: { email, emailOriginal: email, status: 'active', passwordHash: await hashPassword(password), emailVerifiedAt: new Date() } });
       child = await start();
-      assert.equal((await fetch(base + '/dishes')).status, 200);
-      assert.equal((await fetch(base + '/admin/dishes', { redirect: 'manual' })).status, 302);
+      assert.equal((await fetch(base + '/dishes', { redirect: 'manual' })).status, 303);
+      assert.equal((await fetch(base + '/admin/dishes', { redirect: 'manual' })).status, 303);
       const page = await fetch(base + '/auth/login'), html = await page.text();
       const csrf = html.match(/name="_csrf" value="([a-f0-9]+)"/)[1], csrfCookie = page.headers.get('set-cookie').match(/soucha_csrf=([a-f0-9]+)/)[1];
       async function login(pass) { return fetch(base + '/auth/login', { method: 'POST', redirect: 'manual', headers: { cookie: `soucha_csrf=${csrfCookie}`, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email, password: pass, _csrf: csrf, 'g-recaptcha-response': captcha }) }); }
@@ -46,7 +46,7 @@ if (process.env.AUTH_SMOKE_CHILD === '1') {
       assert.equal((await fetch(base + '/admin/dishes', { method: 'POST', headers, redirect: 'manual' })).status, 403);
       const oldPid = child.pid; await stop(); child = await start(); assert.notEqual(child.pid, oldPid);
       assert.equal((await fetch(base + '/admin/dishes', { headers, redirect: 'manual' })).status, 200);
-      console.log('Live PostgreSQL login, CSRF and process-restart smoke passed.');
+      console.log('Live SQLite login, CSRF and process-restart smoke passed.');
     } finally { await stop(); if (user) await prisma.user.delete({ where: { id: user.id } }); await prisma.loginAttempt.deleteMany({ where: { email } }); await prisma.$disconnect(); }
   }
   main().catch(error => { console.error('Live smoke failed:', error.message); process.exitCode = 1; });

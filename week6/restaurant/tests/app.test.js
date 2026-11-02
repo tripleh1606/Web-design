@@ -113,7 +113,7 @@ function fakePrisma() {
   }
 
   const client = {
-    session: { async findUnique({ where }) { return where.tokenHash === hashToken(SESSION) ? { tokenHash: where.tokenHash, csrfToken: CSRF, expiresAt: new Date(Date.now() + 3600000), user: { id: 1, email: 'admin@example.com', emailVerifiedAt: new Date() } } : null; } },
+    session: { async findUnique({ where }) { return where.tokenHash === hashToken(SESSION) ? { tokenHash: where.tokenHash, csrfToken: CSRF, expiresAt: new Date(Date.now() + 3600000), user: { id: 1, email: 'admin@example.com', status: 'active', emailVerifiedAt: new Date() } } : null; } },
     dish: crud('dish'),
     chef: crud('chef'),
     ingredient: crud('ingredient'),
@@ -153,7 +153,7 @@ test('servingsPossible uses the tightest ingredient limit', () => {
   assert.equal(servingsPossible([{ amount: 10, stock: 9 }]), 0);
 });
 
-test('SSR public pages read current data; search, escaping and 404 work', async () => {
+test('SSR authenticated pages read current data; search, escaping and 404 work', async () => {
   await withApp(async ({ request, tables }) => {
     tables.dish.push({ id: 1, name: 'Matcha <b>Latte</b>', description: 'Nóng', price: 65000, category: 'matcha', image: '/beverages/matcha-latte.jpeg', available: true });
     const list = await request('/dishes');
@@ -306,11 +306,12 @@ test('chef dish assign and remove uses PRG and confirmation', async () => {
 });
 
 test('database error returns a generic 500 without leaking connection details', async () => {
-  const client = { dish: { async findMany() { throw new Error('postgresql://user:password@host/db is down'); } }, chef: {}, ingredient: {} };
+  const { client } = fakePrisma();
+  client.dish.findMany = async () => { throw new Error('postgresql://user:password@host/db is down'); };
   const server = createApp({ prisma: client, logger: { error() {} } }).listen(0);
   try {
     await new Promise((resolve) => server.once('listening', resolve));
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/dishes`);
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/dishes`, { headers: { cookie: `soucha_session=${SESSION}` } });
     const html = await response.text();
     assert.equal(response.status, 500);
     assert.doesNotMatch(html, /password|postgresql:\/\//);

@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -70,50 +70,95 @@ model ChefDish {
   @@map("chef_dishes")
 }
 
+enum UserStatus {
+  pending
+  active
+}
+
 model User {
-  id                 Int                      @id @default(autoincrement())
-  email              String                   @unique
-  passwordHash       String
-  emailVerifiedAt    DateTime?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-  sessions           Session[]
-  verificationTokens EmailVerificationToken[]
-  passwordResets     PasswordReset[]
+  id                  Int                      @id @default(autoincrement())
+  email               String                   @unique
+  emailOriginal       String                   @default("")
+  passwordHash        String
+  role                String                   @default("viewer")
+  status              UserStatus               @default(pending)
+  emailVerifiedAt     DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  sessions            Session[]
+  verificationTokens  EmailVerificationToken[]
+  passwordResets      PasswordReset[]
+  activationChallenge ActivationChallenge?
+
   @@map("users")
 }
 
 model Session {
-  id        Int      @id @default(autoincrement())
-  tokenHash String   @unique
-  csrfToken String
-  userId    Int
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int      @id @default(autoincrement())
+  tokenHash  String   @unique
+  csrfToken  String
+  userId     Int?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
 }
 
+model ActivationChallenge {
+  userId      Int       @id
+  purpose     String    @default("activation")
+  otpHash     String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+  lastSentAt  DateTime
+  usedAt      DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activation_challenges")
+}
+
+model ActivationAttempt {
+  emailKey    String    @id
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+
+  @@map("activation_attempts")
+}
+
+model RateLimitBucket {
+  key             String    @id
+  count           Int       @default(0)
+  windowStartedAt DateTime
+  nextAllowedAt   DateTime?
+
+  @@map("rate_limit_buckets")
+}
+
 model EmailVerificationToken {
-  id        Int      @id @default(autoincrement())
-  tokenHash String   @unique
+  id        Int       @id @default(autoincrement())
+  tokenHash String    @unique
   userId    Int
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([expiresAt])
   @@map("email_verification_tokens")
 }
 
 model LoginAttempt {
-  email       String   @id
-  failures    Int      @default(0)
+  email       String    @id
+  failures    Int       @default(0)
   lastFailure DateTime
   lockedUntil DateTime?
+
   @@map("login_attempts")
 }
 
@@ -121,6 +166,7 @@ model LoginIpLimit {
   ip          String   @id
   count       Int
   windowStart DateTime
+
   @@map("login_ip_limits")
 }
 

@@ -1,55 +1,37 @@
-# Registration: email verification, SMTP and Google reCAPTCHA
+# Implementation plan — registration, CAPTCHA and activation OTP
 
-## Current context
+Updated 2026-11-02. Planning only. Follow the [shared contract](auth-parallel-plan.md) and [acceptance matrix](auth-acceptance-checklist.md). Source slides 10–22, 49–51, 58–59; speaker notes prohibit overwriting a pending password on re-registration.
 
-Shared contract: local://auth-parallel-plan.md (Vietnamese) and local://auth-contract-english.md (English authority). Existing Express/EJS conventions are in `restaurant/src/app.js:16-27`, admin form partials and `restaurant/tests/app.test.js:18-135`; PostgreSQL schema currently has no auth models (`restaurant/prisma/schema.prisma:1-68`). No new JSON API or restriction on public menu browsing is requested. This plan defines future implementation, not completed code/tests.
+## Ownership and prerequisites
 
-## Required functionality
+Feature owner: new restaurant/src/auth/registration.js, views/auth/register.ejs and activate.ejs, tests/auth-registration.test.js. The integrator owns schema, dependencies, shared config/credentials/session/throttle/captcha/mail, router mounts and existing shared forms/tests. Build against those real helpers; do not duplicate them.
 
-Vietnamese registration form, CSRF and real Google reCAPTCHA v2 checkbox verified server-side, real SMTP verification email, hashed expiring single-use tokens, email activation before login. Verification never logs the user in. Unverified re-registration replaces pending credentials and invalidates previous links atomically; verified users cannot be overwritten. Provider/config/DB errors never fake success.
+Schema prerequisites: User (original/normalized email, viewer role, pending/active status), ActivationChallenge with purpose/hash/expiry/attempts/lock/sent/used fields, ActivationAttempt per normalized email for existing and nonexistent accounts, shared request counters and CSRF sessions. SMTP and a matching Google CAPTCHA adapter are external prerequisites for live proof.
 
-## Overall implementation approach
+## Implementation steps
 
-### 1. Ownership and dependencies
+1. GET /register renders email/password/confirmation, CSRF and CAPTCHA action register. GET /activate renders email/OTP and a separate POST resend form, both with CSRF. Never render submitted password or newly generated OTP.
+2. POST /register applies email/IP request limits and CSRF/validation, then verifies CAPTCHA at backend before password hashing, user writes or sending OTP. Use the published normalization/validator and ignore role/status/verified fields from body.
+3. Apply the common activation-mail dispatch cooldown/bucket for every normalized email before branching on existence, including active/unknown addresses. Repeated register and resend must not bypass each other's mail limits or disclose existence through 429 differences.
+4. For a new email, hash the password with Argon2id, generate a six-digit OTP via CSPRNG, hash it and transactionally create pending User(role=viewer) plus challenge. Race on unique email must converge on the same generic response/pending-resend rules, not expose a duplicate exception.
+5. For existing pending user, preserve passwordHash and follow the same resend operation and limits. Existing active user is not modified and receives the same 200 message. Rate-limited requests return 429 regardless of existence. Invalid input is 200 VALIDATION_FAILED.
+6. After commit return a generic 200 and dispatch SMTP asynchronously as defined in the contract. OTP goes to email only, never log/response/hidden field. Delivery failure leaves pending, logs sanitized technical failure and allows later resend; no fake delivery confirmation.
+7. POST /activate: request limiter, CSRF, then transaction locking ActivationAttempt by email first and User/challenge if present. Re-read status/purpose/expiry/used/lock and verify OTP. Conditional claim plus active/emailVerifiedAt/usedAt must commit together. Wrong/expired/used/missing challenge uses 200 INVALID_OTP; increment the per-email attempts for pending/active/unknown alike, mirroring into an existing challenge without changing account status. Locked or threshold-reaching request is 429. Only one concurrent correct request succeeds.
+8. POST /activate/resend: common rate/cooldown and ActivationAttempt lock for every email, CSRF, then the same email-before-User lock order and re-read pending status. Replace OTP only for pending, preserve attempts/lockedUntil. Locked pending/active/unknown addresses all return 429; never condition 429 solely on a real challenge row. No password change. Lock expiry is the only budget renewal event; resend itself never clears failures. Register uses this same gate and a new challenge inherits any prior email failure budget.
+9. After successful activation show login link, keep only any anonymous CSRF session, and do not issue an authenticated session. Active user replay returns INVALID_OTP without reverting status. An activation OTP is never accepted as password, session id or reset credential.
 
-Create only `restaurant/src/auth/registration.js`, `restaurant/views/auth/register.ejs`, `restaurant/views/auth/verify-result.ejs`, `restaurant/tests/auth-registration.test.js` (new paths). The login integrator exclusively owns dependencies, schema/generated client, shared session helpers, app/server/config/header/shared test/live smoke edits. Begin after its real shared-foundation barrier; do not invent replacement crypto/config/CSRF helpers. Router mounting occurs after all three real modules exist. No shared tests/install/generation while siblings edit.
+## HTTP/DB tests
 
-### 2. Validation and provider adapters
+Use the real route/helpers with isolated fake adapters for deterministic HTTP tests; use PostgreSQL transactions for concurrency proof.
 
-Export CommonJS `validateRegistrationInput(body)`, `createSmtpMailer(env = process.env)`, `createRecaptchaVerifier(env = process.env, fetchImpl = globalThis.fetch)`, `createRegistrationRouter({prisma,mailer,recaptchaVerifier,authConfig,logger=console})` exactly as contract. Use shared normalizeEmail/hashPassword/generateRawToken/hashToken/requireCsrf. Express4 async handlers catch and call next(error). Router responses have no-store/no-referrer, including forwarded errors through shared integration.
+- New registration pending/viewer/hash and actual captured outbound test mail; body role=admin/status=active ignored.
+- New and existing email have identical success status/message; re-register pending leaves the original passwordHash unchanged.
+- Missing/invalid/reused/expired/wrong-action CAPTCHA cannot create user or send OTP; provider failure is technical 500.
+- Activation wrong/expired/used/purpose mismatch/unknown yields generic INVALID_OTP; no activation/session.
+- Correct OTP atomically sets active, emailVerifiedAt and usedAt; replay fails; two concurrent claims have one winner.
+- Resend invalidates old OTP; cooldown and per-email/IP budgets cover direct register/resend calls; attempts and lockedUntil persist despite resends.
+- Interleave resend and activate under real DB concurrency; never activate with an obsolete generation or reset the failure budget.
+- Pending login is denied, activation does not authenticate, active login needs the original valid password.
+- Test pending/active/unknown parity: submit five invalid OTPs for each, then resend/re-register after ordinary cooldown but before lock expiry; all receive 429. Include original/normalized email cases.
 
-Validation returns `{values:{email},errors,password}`. Email trimmed/lowercased, max120, `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`; password string8..128 inclusive, confirmPassword exactly equal. No password trim/Unicode normalization. Nonstring inputs invalid; never render password/confirmation/CAPTCHA response. Reuse existing EJS escaped fields/partials, not raw interpolation.
-
-SMTP: return `{isConfigured(),sendVerificationEmail({to,verifyUrl})}`. Nodemailer dependency installed by integrator. SMTP_HOST and SMTP_FROM required; port integer1..65535 default587, SMTP_SECURE literal true/false defaultfalse; SMTP_USER/PASS optional together for real authenticated SMTP, local test SMTP may omit both. Missing/invalid config makes send throw, not succeed. Transport connectionTimeout/socketTimeout10000ms. Vietnamese text+HTML with escaped link/display values; never log raw links, tokens, provider payloads/credentials. Check isConfigured before DB writes; send failure after commit still leaves unverified retryable account.
-
-CAPTCHA: return `{isConfigured(),siteKey,verifyToken(token,remoteIp)}`. Node global fetch with AbortSignal.timeout(10000), POST form-urlencoded secret/response/optional remoteip to `https://www.google.com/recaptcha/api/siteverify`. Require HTTP ok, well-formed JSON, `success===true`, hostname equals normalized application hostname ignoring port. APP_BASE_URL from env must match resolved app config; pass normalized base URL to adapter env in integrator rather than recomputing unrelated fallback. Return exact reasons missing-input-response/not-configured/network-error/verification-failed or success reason null. Reject before DB writes. No production bypass; injected adapters only in explicit tests.
-
-### 3. Routes and transaction boundaries
-
-GET `/auth/register`: authenticated verified user302 `/admin/dishes`; otherwise200 form locals `{title,values:{email:''},errors:{},recaptchaSiteKey}` plus shared csrfToken/currentUser.
-
-POST `/auth/register`: requireCsrf first; invalid input ->400, CAPTCHA missing/failed ->400, unconfigured/unavailable CAPTCHA or SMTP ->503. Preserve normalized email only in errors. Check email: verified duplicate400. Hash password and generate fresh raw64hex token, store hash and expiresAt=now+emailVerifyTtlMs.
-
-New account: interactive `prisma.$transaction(async tx => ...)` creates user with emailVerifiedAt null and token atomically; concurrent unique-email P2002 ->400 duplicate/retry, no500. Existing unverified account: lock user with parameterized Prisma tagged query `await tx.$queryRaw\`SELECT id FROM users WHERE id = ${userId} FOR UPDATE\``; reread user after lock. If now verified, reject400 without changes. Otherwise update pending passwordHash, delete all unused old tokens and create the new token, all in one transaction. No password overwrite after verification. Transaction errors roll back and go through error handler. Do not hold transactions open for mail.
-
-After commit send `<appBaseUrl>/auth/verify-email?token=<raw64hex>` to normalized email. SMTP failure ->503 register form and no session; committed account remains unverified and another same-email registration can retry. Successful SMTP submission ->201 result view pending; report actual inbox delivery only after real-provider smoke. Verification lifetime defaults24h.
-
-GET `/auth/verify-email`: missing/malformed raw token ->400 invalid. In one interactive transaction find token by hash including user; absent/used/expired ->400 invalid/expired. Acquire same parameterized user FOR UPDATE lock, then conditionally claim `tx.emailVerificationToken.updateMany({where:{id:record.id,usedAt:null,expiresAt:{gt:now}},data:{usedAt:now}})` using now after lock acquisition. Only count1 may set user.emailVerifiedAt (if still null); count0 returns400. Rollback on failure prevents partial claim/verification. Success200 result with `/auth/login?verified=1`, no session. Exactly one concurrent consume succeeds. If resend wins the lock, old token is deleted and claim fails; if verification wins, resend's post-lock reread rejects credential change.
-
-### 4. Views
-
-`register.ejs`: Vietnamese email/password/confirmPassword inputs, hidden `_csrf`, real v2 checkbox `<div class="g-recaptcha" data-sitekey="<%= recaptchaSiteKey %>"></div>` and `https://www.google.com/recaptcha/api.js` async/defer script. Escaped field/general errors, no retained password values. Keep existing partial/class conventions; no shared CSS edits by this slice.
-
-`verify-result.ejs`: exact locals `{title,status,heading,message,actionHref,actionLabel}`; statuses pending/verified/invalid/expired. Pending explains inbox delivery/verification requirement; verified offers login; invalid/expired offers registration again. Escape text/URLs, never display raw query token. Integrator supplies shared response headers and template locals.
-
-## Verification
-
-Planning performed source inspection only. After all slices integrate run from `restaurant/`: `node --test tests/auth-registration.test.js`, then shared `npm test`. Use node:test HTTP style with private fake Prisma/transaction rollback and explicitly injected mail/CAPTCHA adapters; do not alter shared fixture files. Keep tests focused on behavior: invalid field boundaries and CSRF stop writes/mail; CAPTCHA reject/hostname mismatch/timeout/malformed result503 as appropriate; unavailable mail503; new account unverified with hashed password/token and no session; duplicate400; resend old link invalid, new password not usable before matching verification; valid link200 once, unknown/used/expired400; DB failure rollback; verification does not authenticate; password login only after activation. Inject fetch failures at provider boundary, not mock echoes of internal wiring. Inspect actual rendered form for widget and no password retention as browser smoke, not brittle source-text assertions.
-
-Real PostgreSQL proof belongs in integrator-owned live smoke on an approved disposable DATABASE_URL, generated/pushed schema and `LIVE_SMOKE_ALLOW_DB_WRITE=1`. Two concurrent real HTTP verification requests for one run-owned token -> exactly one200 and one400, one verified account. Real DB sequential resend-before-old-verify and verify-before-resend check the lock contract's observable outcomes; additionally simultaneous resend/verify must yield only one consistent serial order, never a verified user with a password introduced after token claim. Use injected test adapters in the test child process only; production server never exposes a bypass. The login plan freezes the exact harness setup and commands. Do not seed.
-
-Real-provider browser prerequisites: integrated running server with matching APP_BASE_URL, v2 checkbox keys registered for exact hostname, reachable SMTP with authorized sender, controlled inbox. Solve real widget, submit, observe201 then actual email arrival, follow URL ->200 without authenticated admin access, then log in with matching password. Missing/invalid CAPTCHA cannot create verified account. Confirm expired/replayed link fails. Inspect register/result/login/header/logout UI; close tab. No claim of email delivery or Google success from injected tests. Separate medium-or-lower reviewer inspects final diff/security, fixes are followed by affected smoke.
-
-## Assumptions and contingencies
-
-Shared defaults: SMTP, v2 checkbox,24h expiry, verified accounts may manage CRUD, no automatic login/roles/password reset. Missing SMTP/Google keys/inbox blocks only real-provider smoke; implement real adapters and finish deterministic coverage, explicitly report unavailable proof. Missing approved disposable DB blocks live locking/persistence proof, not reachable fake-Prisma tests. Never use an arbitrary user database, fake mail success or production CAPTCHA bypass.
+Live evidence uses controlled inbox, real fresh CAPTCHA token, OTP entry, relevant DB states and redacted UI/Network. Provider mocks cannot prove Google or SMTP delivery. Record checklist R01–R08 and C01–C07. Do not send mass requests to external providers; use isolated adapters for repeated lock tests.

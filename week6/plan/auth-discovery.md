@@ -1,23 +1,19 @@
-## Repository discovery
+# Hiện trạng repository — week6
 
-Source: AuthDiscovery read-only inspection in this session. No repository changes or runtime checks.
+Kiểm tra mã nguồn ngày 02/11/2026. Đây là kết quả audit tĩnh và lịch sử thử chạy test trong phiên hiện tại; không phải chứng nhận app chạy được.
 
-- Node >=20, Express ^4.21.2, EJS ^3.1.10, Prisma/Client 6.12.0, PostgreSQL. Scripts npm test, npm run test:live, npm run db:generate, npm run db:push, npm run db:seed: restaurant/package.json:5-28. Lockfile restaurant/package-lock.json.
-- restaurant/server.js:1-14 loads dotenv, requires DATABASE_URL, constructs Prisma and injects createApp. restaurant/.env.example:1-4 contains DATABASE_URL and PORT only.
-- restaurant/prisma/schema.prisma:1-68 contains restaurant entities and relations, no auth entities.
-- restaurant/src/app.js:16-27 exports createApp({ prisma, logger = console }), URL-encoded forms then query method override. Public GET /, /dishes, /dishes/:id at :38-61. Header management link restaurant/views/partials/header.ejs:11-15.
-- CRUD are SSR/form HTTP endpoints, not JSON APIs. Generic /admin/{dishes,chefs,ingredients}: GET list, GET /new, POST create, GET /:id/edit, PATCH /:id, GET /:id/delete, DELETE /:id at restaurant/src/app.js:63-130. /admin redirects. Mapping restaurant/src/validation.js:1-28.
-- Dish association endpoints restaurant/src/app.js:163-283: GET /admin/dishes/:id; POST /admin/dishes/:id/ingredients; GET /admin/dishes/:id/ingredients/:ingredientId/edit; PATCH and DELETE /admin/dishes/:id/ingredients/:ingredientId; GET /admin/dishes/:id/ingredients/:ingredientId/delete.
-- Chef association endpoints restaurant/src/app.js:313-378: GET /admin/chefs/:id; POST /admin/chefs/:id/dishes; GET /admin/chefs/:id/dishes/:dishId/delete; DELETE /admin/chefs/:id/dishes/:dishId.
-- restaurant/tests/app.test.js:18-135 uses node:test, injected fake Prisma and local HTTP. Unauthenticated CRUD assumptions at :167-184, :212, :272. restaurant/tests/live-smoke.js:24-26 similarly assumes public admin.
-- restaurant/src/app.js:384-397 generic 500 handler redacts DB URLs.
+- App tại `../restaurant`: CommonJS Node >=20, Express 4.21.x, EJS 3.1.x, Prisma/Client 6.12.0 và PostgreSQL theo package.json.
+- server.js tải dotenv, kiểm tra DATABASE_URL, tạo PrismaClient và truyền vào createApp. Không đọc/in credential thật để lập plan.
+- prisma/schema.prisma hiện chỉ có Dish, Chef, Ingredient, DishIngredient, ChefDish. Chưa có model auth.
+- src/app.js có EJS, URL-encoded form, method-override, static assets, public /dishes và /dishes/:id. /admin có CRUD ba thực thể và quản lý quan hệ món/nguyên liệu, đầu bếp/món.
+- Chưa có session/cookie/auth middleware, CAPTCHA, OTP, forgot/reset hay logout trong code hiện tại. Header có Thực đơn và Quản lý.
+- tests/app.test.js dùng fake Prisma và HTTP, đang giả định admin công khai. tests/live-smoke.js là kiểm tra DB thật kiểu read-only theo README; không đổi nó thành công cụ ghi DB ngầm.
+- package.json có npm test, test:live, db:generate, db:push, db:seed. Dependencies auth chưa được thêm. README còn đường dẫn dự án cũ; sửa khi triển khai/tích hợp.
+- `npm test` trong lần kiểm tra trước gặp spawn EPERM của sandbox; chạy `node --test --test-isolation=none tests/app.test.js` sau đó gặp MODULE_NOT_FOUND: express. Cần npm ci trước baseline; không được báo test pass.
+- Chưa kiểm tra Supabase thật, SMTP, reCAPTCHA hay restart session. Trong lượt chỉnh plan này không cài dependencies, không đổi schema/DB và không chạy test chức năng mới.
 
-## Design seams (proposals, not existing paths)
+## Đối chiếu với bài HTML
 
-Registration owns proposed src/auth/registration.js plus dedicated views/tests. Login owner owns proposed src/auth/session.js and all shared integration: app/server/schema/manifests/header/env/shared tests. Logout owns proposed src/auth/logout.js plus dedicated tests. All relative paths in this paragraph are under restaurant/.
+Có nền CRUD SSR. Bốn phần auth ở slide 48 đều còn phải làm: đăng ký/OTP/CAPTCHA; login/session/brute force; logout/bảo vệ CRUD; forgot/reset. Các file trong folder plan là đặc tả tương lai, không được tính là code.
 
-SMTP, origin, sender and reCAPTCHA keys are deployment prerequisites. Existing test commands were read, not executed.
-
-## Confirmed scope
-
-The user selected protecting existing CRUD only. All /admin management endpoints require a verified, authenticated user; public browsing remains public. Do not create a separate JSON CRUD API.
+Xem [hợp đồng chung](auth-parallel-plan.md) và [checklist](auth-acceptance-checklist.md). Các model, module và view auth được nêu trong plan là đường dẫn dự kiến, không phải file đã tồn tại.

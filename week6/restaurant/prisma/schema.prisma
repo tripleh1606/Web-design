@@ -79,6 +79,7 @@ model User {
   updatedAt          DateTime                 @updatedAt
   sessions           Session[]
   verificationTokens EmailVerificationToken[]
+  passwordResets     PasswordReset[]
   @@map("users")
 }
 
@@ -121,4 +122,27 @@ model LoginIpLimit {
   count       Int
   windowStart DateTime
   @@map("login_ip_limits")
+}
+
+model PasswordReset {
+  id            Int       @id @default(autoincrement())
+  tokenHash     String    @unique
+  userId        Int
+  expiresAt     DateTime
+  usedAt        DateTime?
+  invalidatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+model PasswordResetLimit {
+  key         String   @id
+  count       Int      @default(1)
+  windowStart DateTime @default(now())
+
+  @@map("password_reset_limits")
 }

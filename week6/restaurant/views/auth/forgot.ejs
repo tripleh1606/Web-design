@@ -1,0 +1,25 @@
+<%- include('../partials/header', { title }) %>
+<section class="admin-content">
+  <h1>Quên mật khẩu</h1>
+  <% if (notice) { %>
+    <p class="form-notice" role="status"><%= notice %></p>
+  <% } %>
+  <% if (errors.form) { %>
+    <p class="form-alert" role="alert"><%= errors.form %></p>
+  <% } %>
+  <% if (errors.email) { %>
+    <p class="form-alert" role="alert"><%= errors.email %></p>
+  <% } %>
+  <form method="POST" action="/auth/forgot" class="form-card">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label>Email
+      <input type="email" name="email" maxlength="120" value="<%= values.email %>" autocomplete="email" required>
+    </label>
+    <button type="submit">Gửi liên kết đặt lại</button>
+  </form>
+  <div style="margin-top: 1rem;">
+    <a href="/auth/login">Quay lại đăng nhập</a> · <a href="/auth/register">Đăng ký tài khoản</a>
+  </div>
+</section>
+<%- include('../partials/footer') %>
+

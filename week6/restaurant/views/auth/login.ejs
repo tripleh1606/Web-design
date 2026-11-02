@@ -1,12 +1,16 @@
 <%- include('../partials/header', { title }) %>
 <section class="admin-content"><h1>Đăng nhập</h1>
-<% if (notice) { %><p><%= notice %></p><% } %>
+<% if (notice) { %><p class="form-notice" role="status"><%= notice %></p><% } %>
 <% if (errors.form) { %><p class="form-alert" role="alert"><%= errors.form %></p><% } %>
 <form method="POST" action="/auth/login" class="form-card">
 <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="next" value="<%= values.next %>">
 <label>Email <input type="email" name="email" maxlength="120" value="<%= values.email %>" autocomplete="email" required></label>
 <label>Mật khẩu <input type="password" name="password" maxlength="128" autocomplete="current-password" required></label>
 <div class="g-recaptcha" data-sitekey="<%= recaptchaSiteKey %>"></div><button type="submit">Đăng nhập</button>
-</form><a href="/auth/register">Đăng ký</a></section>
+</form>
+<div style="margin-top: 1rem;">
+  <a href="/auth/register">Đăng ký</a> · <a href="/auth/forgot">Quên mật khẩu?</a>
+</div>
+</section>
 <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <%- include('../partials/footer') %>

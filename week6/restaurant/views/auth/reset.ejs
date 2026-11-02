@@ -1,0 +1,37 @@
+<%- include('../partials/header', { title }) %>
+<section class="admin-content">
+  <% if (invalid) { %>
+    <h1>Liên kết không hợp lệ</h1>
+    <p class="form-alert" role="alert">INVALID_RESET_TOKEN: Liên kết đặt lại mật khẩu không hợp lệ, đã hết hạn hoặc đã được sử dụng.</p>
+    <div style="margin-top: 1rem;">
+      <a href="/auth/forgot">Yêu cầu liên kết mới</a> · <a href="/auth/login">Đăng nhập</a>
+    </div>
+  <% } else { %>
+    <h1>Đặt lại mật khẩu</h1>
+    <% if (errors.form) { %>
+      <p class="form-alert" role="alert"><%= errors.form %></p>
+    <% } %>
+    <% if (errors.password) { %>
+      <p class="form-alert" role="alert"><%= errors.password %></p>
+    <% } %>
+    <% if (errors.confirmPassword) { %>
+      <p class="form-alert" role="alert"><%= errors.confirmPassword %></p>
+    <% } %>
+    <form method="POST" action="/auth/reset" class="form-card">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="token" value="<%= token %>">
+      <label>Mật khẩu mới
+        <input type="password" name="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+      </label>
+      <label>Xác nhận mật khẩu mới
+        <input type="password" name="confirmPassword" minlength="8" maxlength="128" autocomplete="new-password" required>
+      </label>
+      <button type="submit">Đặt lại mật khẩu</button>
+    </form>
+    <div style="margin-top: 1rem;">
+      <a href="/auth/login">Quay lại đăng nhập</a>
+    </div>
+  <% } %>
+</section>
+<%- include('../partials/footer') %>
+

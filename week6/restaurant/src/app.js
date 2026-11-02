@@ -6,6 +6,7 @@ const { categories, categoryLabel, formatVND } = require('./soucha-menu');
 const { servingsPossible } = require('./recipe');
 const { resolveAuthConfig, attachSessionMiddleware, requireAdminAuth, requireCsrf, createRecaptchaVerifier, createLoginRouter, createLogoutRouter } = require('./auth/session');
 const { createSmtpMailer, createRegistrationRouter } = require('./auth/registration');
+const { createPasswordResetRouter } = require('./auth/password-reset');
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
@@ -36,6 +37,9 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
   app.use('/auth', createRegistrationRouter({ prisma, mailer: mailer || createSmtpMailer(), recaptchaVerifier: captcha, authConfig, logger }));
   app.use('/auth', createLoginRouter({ prisma, recaptchaVerifier: captcha, authConfig }));
   app.use('/auth', createLogoutRouter({ prisma, authConfig }));
+  const resetRouter = createPasswordResetRouter({ prisma, mailer: mailer || createSmtpMailer(), authConfig, logger });
+  app.use('/auth', resetRouter);
+  app.use('/', resetRouter);
   app.use('/admin', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, requireAdminAuth, (req, res, next) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : requireCsrf(req, res, next));
 
   const notFound = (res, back = '/dishes') => res.status(404).render('error', {

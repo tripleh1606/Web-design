@@ -1,17 +1,38 @@
-<%- include('../partials/header', { title }) %>
-<section class="admin-content"><h1>Đăng nhập</h1>
-<% if (notice) { %><p class="form-notice" role="status"><%= notice %></p><% } %>
-<% if (errors.form) { %><p class="form-alert" role="alert"><%= errors.form %></p><% } %>
-<form method="POST" action="/login" class="form-card" data-captcha-action="login" data-captcha-site-key="<%= recaptchaSiteKey %>">
-<input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="next" value="<%= values.next %>">
-<label>Email <input type="email" name="email" maxlength="254" value="<%= values.email %>" autocomplete="email" required></label>
-<label>Mật khẩu <input type="password" name="password" maxlength="128" autocomplete="current-password" required></label>
-<input type="hidden" name="g-recaptcha-response" value="">
-<p data-captcha-error role="alert" hidden>Không thể xác minh CAPTCHA. Vui lòng tải lại trang và thử lại.</p><button type="submit">Đăng nhập</button>
-</form>
-<div style="margin-top: 1rem;">
-  <a href="/register">Đăng ký</a> · <a href="/activate">Kích hoạt</a> · <a href="/auth/forgot">Quên mật khẩu?</a>
-</div>
+<%- include('../partials/header', { title, authPage: true }) %>
+<section class="auth-page" aria-labelledby="login-title">
+  <div class="auth-panel">
+    <header class="auth-intro">
+      <span class="auth-eyebrow">Tài khoản Soucha</span>
+      <h1 id="login-title">Chào bạn trở lại.</h1>
+      <p>Một chút trà ngon, một ngày thật nhẹ nhàng.<br>Đăng nhập để tiếp tục cùng Soucha.</p>
+    </header>
+    <% if (notice) { %><p class="auth-notice" role="status"><%= notice %></p><% } %>
+    <% if (errors.form) { %><div class="form-alert auth-alert" role="alert" data-error-code="<%= errorCode %>"><%= errors.form %></div><% } %>
+    <form method="POST" action="/login" class="auth-form" <% if (needsCaptcha) { %>data-captcha-v2<% } %>>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="login-email">Địa chỉ email</label>
+        <input id="login-email" type="email" name="email" maxlength="254" value="<%= values.email %>" placeholder="ban@example.com" autocomplete="email" autocapitalize="none" spellcheck="false" required>
+      </div>
+      <div class="field">
+        <div class="auth-label-row"><label for="login-password">Mật khẩu</label><a href="/forgot">Quên mật khẩu?</a></div>
+        <div class="auth-password">
+          <input id="login-password" type="password" name="password" maxlength="128" placeholder="Nhập mật khẩu của bạn" autocomplete="current-password" required>
+          <button class="auth-password-toggle" type="button" data-password-toggle aria-controls="login-password" aria-label="Hiện mật khẩu" aria-pressed="false" hidden>Hiện</button>
+        </div>
+      </div>
+      <% if (needsCaptcha) { %>
+        <div class="auth-verification">
+          <% if (recaptchaSiteKey) { %><div class="auth-captcha"><div class="g-recaptcha" data-sitekey="<%= recaptchaSiteKey %>" data-size="normal"></div></div><% } %>
+          <p class="auth-helper" data-captcha-message role="status"><%= recaptchaSiteKey ? 'Tích ô xác minh để tiếp tục đăng nhập.' : 'Dịch vụ xác minh chưa được cấu hình. Vui lòng thử lại sau.' %></p>
+        </div>
+      <% } %>
+      <button class="button primary auth-submit" type="submit" <% if (needsCaptcha && !recaptchaSiteKey) { %>disabled<% } %>>Đăng nhập <span aria-hidden="true">↗</span></button>
+    </form>
+    <div class="auth-switch">Chưa có tài khoản? <a href="/register">Đăng ký ngay</a></div>
+    <a class="auth-secondary-link" href="/activate">Kích hoạt tài khoản bằng OTP</a>
+  </div>
 </section>
-<%- include('captcha-script', { recaptchaSiteKey }) %>
+<% if (needsCaptcha && recaptchaSiteKey) { %><script src="https://www.google.com/recaptcha/api.js?hl=vi" async defer></script><% } %>
+<script src="/auth.js" defer></script>
 <%- include('../partials/footer') %>

@@ -4,7 +4,7 @@
     <h1>Liên kết không hợp lệ</h1>
     <p class="form-alert" role="alert">INVALID_RESET_TOKEN: Liên kết đặt lại mật khẩu không hợp lệ, đã hết hạn hoặc đã được sử dụng.</p>
     <div style="margin-top: 1rem;">
-      <a href="/auth/forgot">Yêu cầu liên kết mới</a> · <a href="/auth/login">Đăng nhập</a>
+      <a href="/forgot">Yêu cầu liên kết mới</a> · <a href="/login">Đăng nhập</a>
     </div>
   <% } else { %>
     <h1>Đặt lại mật khẩu</h1>
@@ -17,7 +17,7 @@
     <% if (errors.confirmPassword) { %>
       <p class="form-alert" role="alert"><%= errors.confirmPassword %></p>
     <% } %>
-    <form method="POST" action="/auth/reset" class="form-card">
+    <form method="POST" action="/reset" class="form-card">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="token" value="<%= token %>">
       <label>Mật khẩu mới
@@ -29,7 +29,7 @@
       <button type="submit">Đặt lại mật khẩu</button>
     </form>
     <div style="margin-top: 1rem;">
-      <a href="/auth/login">Quay lại đăng nhập</a>
+      <a href="/login">Quay lại đăng nhập</a>
     </div>
   <% } %>
 </section>

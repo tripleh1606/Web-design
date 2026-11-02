@@ -1,33 +1,24 @@
-# Implementation plan — current-session logout
+# Logout module — integration handoff
 
-Updated 2026-11-02. Planning only. Follow [shared contract](auth-parallel-plan.md), [Vietnamese logout detail](logout-implementation-plan.md) and source slides 34, 54, 60.
+Updated 2026-11-02. The user chose **only the logout module**, leaving login/session implementation to a teammate, and additionally requested **Google reCAPTCHA v2 Checkbox for logout**. This overrides the earlier logout-only-CSRF design; registration/login CAPTCHA choices are separate.
 
-## Ownership
+The module is implemented with isolated HTTP/provider tests. It is not mounted in app.js and no real login/session/schema or Google credentials have been supplied. Do not claim a working integrated authentication flow.
 
-Create restaurant/src/auth/logout.js and tests/auth-logout.test.js. Reuse shared session/cookie/CSRF/store helpers; the integrator mounts the router at root and adds the header form. Foundation must provide real persistent session lookup/deletion and protected CRUD first.
+Read the [shared contract](auth-parallel-plan.md), [Vietnamese detail](logout-implementation-plan.md), and the concrete [integration/key setup guide](../restaurant/docs/logout-integration.md).
 
-## Behavior
+Files: restaurant/src/auth/logout.js and recaptcha-v2.js; views/auth/logout.ejs; tests/auth-logout.test.js and recaptcha-v2.test.js; .env.example and docs/logout-integration.md.
 
-- POST /logout verifies current session CSRF and origin policy.
-- Derive the lookup hash from the incoming validated sid; delete only the current Session. Never delete by userId for ordinary logout.
-- Await successful database deletion before expiring sid cookie (same name/path/domain) and returning **303 Location: /login**.
-- If deletion fails, return technical 500; no success redirect or cookie-only success. Do not log sid/hash/CSRF.
-- GET /logout returns 404 and does not change session state.
-- Anonymous form session with valid CSRF may be destroyed and redirected; missing/invalid CSRF is 403. Replaying the old logout request need not succeed.
-- Other sessions of the same account survive. This differs from reset password, which must delete all user sessions.
-- Auth response no-store. Back can show an old page, but new requests to /dishes, /dishes/:id or /admin with the captured former sid must receive **303 /login**.
+Factory: createLogoutRouter({ prisma, requireLogin, requireCsrf, clearSessionCookie, authConfig, recaptchaVerifier }). It rejects missing required dependencies. Default recaptchaVerifier uses createLogoutRecaptchaFromEnv(), requiring an origin APP_BASE_URL (explicit HTTPS in production) and LOGOUT_RECAPTCHA_V2_SITE_KEY/SECRET_KEY.
 
-## Verification
+The teammate must attach real session middleware first and provide req.auth.user {id,email}, req.auth.session {userId,sidHash} and res.locals.csrfToken. requireLogin checks active status/expiry/revocation and redirects 303 /login; requireCsrf enforces shared session token/origin checks. clearSessionCookie must match the real login cookie configuration.
 
-Use real HTTP route/middleware and a controlled store fixture for deterministic tests, then disposable PostgreSQL for integration.
+- GET /logout/confirm: authenticated read-only v2 form; no session deletion.
+- GET /logout: remains unregistered, 404 without mutation.
+- POST /logout: requireLogin → requireCsrf → Google v2 siteverify → await deletion by this sidHash + userId → clear cookie → 303 /login.
+- Invalid/missing/replayed CAPTCHA: 200 error form, session preserved. Provider/missing-config/store failure: 500, no successful logout.
+- Anonymous/expired/pending request: login guard 303 /login; wrong CSRF/origin: 403 before Google.
+- Other sessions survive. Teammate guards /dishes, /dishes/:id and /admin against replay of revoked sid.
 
-1. Authenticate sessions A/B for the same user; both can access /admin.
-2. Capture A's sid privately. Submit the rendered A form: verify deletion, expired cookie and 303 /login.
-3. Replay captured sid A against /dishes and /dishes/:id as well as representative /admin read and mutation routes; 303 /login and no CRUD access/change. Session B still works.
-4. Test missing/wrong CSRF and foreign Origin: 403, valid session remains.
-5. GET /logout: 404 and session still works.
-6. Hold deletion pending and then reject it: no premature successful response; failure is 500 and not presented as logout success.
-7. Check session expiration separately and restart the server to demonstrate B remains in the persistent store.
-8. Capture redacted UI, Network, Cookies and DB row evidence, plus direct HTTP replay. Mark S06–S09 only after observation.
+Google enforces token expiry/single-use. challenge_ts is challenge load time; do not reject a fresh solved token merely because the challenge loaded over two minutes ago. V2 has no v3 action/score. No missing-key/provider bypass.
 
-Commands and integration fixtures are owned by the login integrator. Do not seed or touch arbitrary shared Supabase data to test logout.
+Future integration checks: real login/store/CSRF/cookie helpers, actual provider keys and browser solve, persistent DB deletion, captured-sid replay, second session survival and process restart. Tests using injected store/provider do not satisfy those live checks. See source checklist S06–S09 and user-extension acceptance in auth-acceptance-checklist.md.

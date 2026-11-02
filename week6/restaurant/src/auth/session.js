@@ -1,47 +1,41 @@
-const { lockDatabaseWrite } = require('./database-lock');
-const express = require('express');
-const crypto = require('node:crypto');
-const argon2 = require('argon2');
-const { normalizeEmail, validEmail, hashPassword } = require('./credentials');
-const { createRecaptchaVerifier } = require('./captcha');
-const { promisify } = require('node:util');
-const scrypt = promisify(crypto.scrypt);
-const TOKEN = /^[a-f0-9]{64}$/;
-const DUMMY_HASH = `scrypt$${'00'.repeat(16)}$${'00'.repeat(64)}`;
+const { TOKEN, generateRawToken, hashToken, safeEqualToken } = require('./credentials');
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const FORM_PATHS = new Set(['/register', '/activate', '/login', '/forgot', '/reset']);
 
-function resolveAuthConfig(overrides = {}) {
-  const production = process.env.NODE_ENV === 'production';
-  const origin = overrides.appBaseUrl ?? process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT || 3001}`;
-  const url = new URL(origin);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash || (production && (!process.env.APP_BASE_URL && !overrides.appBaseUrl || url.protocol !== 'https:'))) throw new Error('Invalid APP_BASE_URL');
-  function ttl(key, env) {
-    const n = overrides[key] ?? (process.env[env] === undefined ? 86400000 : Number(process.env[env]) * 3600000);
-    if (!Number.isSafeInteger(n) || n <= 0 || (overrides[key] === undefined && process.env[env] !== undefined && !Number.isInteger(Number(process.env[env])))) throw new Error(`Invalid ${env}`);
-    return n;
+function parseCookies(header = '') {
+  const result = Object.create(null), seen = new Set();
+  for (const pair of header.split(';')) {
+    const pos = pair.indexOf('=');
+    if (pos < 1) continue;
+    const name = pair.slice(0, pos).trim();
+    if (seen.has(name)) { delete result[name]; continue; }
+    seen.add(name);
+    try { result[name] = decodeURIComponent(pair.slice(pos + 1).trim()); } catch {}
   }
-  return { appBaseUrl: url.origin, sessionCookieName: overrides.sessionCookieName ?? process.env.SESSION_COOKIE_NAME ?? 'soucha_session', csrfCookieName: overrides.csrfCookieName ?? 'soucha_csrf', sessionTtlMs: ttl('sessionTtlMs', 'SESSION_TTL_HOURS'), anonymousTtlMs: 1800000, registration: overrides.registration, cookieSecure: overrides.cookieSecure ?? (production || url.protocol === 'https:'), recaptchaSiteKey: overrides.recaptchaSiteKey ?? process.env.RECAPTCHA_SITE_KEY ?? '', recaptchaSecretKey: overrides.recaptchaSecretKey ?? process.env.RECAPTCHA_SECRET_KEY ?? '' };
+  return result;
 }
-
-async function verifyPassword(password, hash) {
-  if (typeof hash === 'string' && hash.startsWith('$argon2id$')) return argon2.verify(hash, password);
-  // Existing accounts can still verify their legacy scrypt hash. New writes use Argon2id.
-  if (typeof hash !== 'string' || !/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(hash)) return false;
-  const [, salt, key] = hash.split('$'), actual = await scrypt(password, Buffer.from(salt, 'hex'), 64);
-  return crypto.timingSafeEqual(actual, Buffer.from(key, 'hex'));
+function serializeCookie(name, value, config, maxAge) {
+  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; HttpOnly; SameSite=Lax${config.cookieSecure ? '; Secure' : ''}${maxAge === 0 ? '; Expires=Thu, 01 Jan 1970 00:00:00 GMT' : ''}`;
 }
-const generateRawToken = () => crypto.randomBytes(32).toString('hex');
-const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
-const safeEqualToken = (a, b) => typeof a === 'string' && typeof b === 'string' && TOKEN.test(a) && TOKEN.test(b) && crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
-function parseCookies(header = '') { const result = Object.create(null), seen = new Set(); for (const pair of header.split(';')) { const pos = pair.indexOf('='); if (pos < 1) continue; const name = pair.slice(0, pos).trim(); if (seen.has(name)) { delete result[name]; continue; } seen.add(name); try { result[name] = decodeURIComponent(pair.slice(pos + 1).trim()); } catch {} } return result; }
-function serializeCookie(name, value, options = {}) { let out = `${name}=${encodeURIComponent(value)}`; if (options.maxAge !== undefined) out += `; Max-Age=${options.maxAge}`; if (options.expires) out += `; Expires=${options.expires.toUTCString()}`; if (options.path) out += `; Path=${options.path}`; if (options.httpOnly) out += '; HttpOnly'; if (options.secure) out += '; Secure'; if (options.sameSite) out += `; SameSite=${options.sameSite}`; return out; }
-const cookieOptions = config => ({ httpOnly: true, secure: config.cookieSecure, sameSite: 'Lax', path: '/' });
-function setSessionCookie(res, token, config) { res.append('Set-Cookie', serializeCookie(config.sessionCookieName, token, { ...cookieOptions(config), maxAge: Math.floor(config.sessionTtlMs / 1000) })); }
-function clearSessionCookie(res, config) { res.append('Set-Cookie', serializeCookie(config.sessionCookieName, '', { ...cookieOptions(config), maxAge: 0, expires: new Date(0) })); }
-function sanitizeNextPath(value) { if (typeof value !== 'string' || value.length > 200 || /[\\\x00-\x1f\x7f]/.test(value) || !value.startsWith('/') || value.startsWith('//')) return '/admin/dishes'; try { const path = value.split('?')[0]; if (/%(?:2f|5c)/i.test(path)) return '/admin/dishes'; const url = new URL(value, 'http://localhost'); if (url.origin !== 'http://localhost' || !(url.pathname === '/admin' || url.pathname.startsWith('/admin/'))) return '/admin/dishes'; url.searchParams.delete('_method'); return url.pathname + url.search; } catch { return '/admin/dishes'; } }
-async function createSessionForUser({ prisma, userId, authConfig, res }) { const rawToken = generateRawToken(), tokenHash = hashToken(rawToken), csrfToken = generateRawToken(), expiresAt = new Date(Date.now() + authConfig.sessionTtlMs); await prisma.session.create({ data: { tokenHash, csrfToken, expiresAt, userId } }); if (res) setSessionCookie(res, rawToken, authConfig); return { rawToken, tokenHash, csrfToken, expiresAt }; }
-
-function attachSessionMiddleware({ prisma, authConfig }) {
+function setSessionCookie(res, token, config, ttlMs = config.sessionTtlMs) {
+  res.append('Set-Cookie', serializeCookie(config.sessionCookieName, token, config, Math.floor(ttlMs / 1000)));
+}
+function clearSessionCookie(res, config) {
+  res.append('Set-Cookie', serializeCookie(config.sessionCookieName, '', config, 0));
+}
+async function createSessionForUser({ prisma, userId, authConfig, res }) {
+  const rawToken = generateRawToken(), now = new Date();
+  const ttl = userId == null ? authConfig.anonymousTtlMs : authConfig.sessionTtlMs;
+  const data = { sidHash: hashToken(rawToken), csrfToken: generateRawToken(), userId: userId ?? null,
+    createdAt: now, lastSeenAt: now, expiresAt: new Date(now.getTime() + ttl) };
+  const session = await prisma.session.create({ data });
+  if (res) setSessionCookie(res, rawToken, authConfig, ttl);
+  return { ...session, ...data, rawToken };
+}
+function attachSessionMiddleware({ prisma, authConfig, clock = () => new Date() }) {
+  const activeUser = session => session?.user?.status === 'active' && session.user.emailVerifiedAt;
+  const isCurrent = (session, now) => session && session.expiresAt > now &&
+    session.lastSeenAt > new Date(now.getTime() - authConfig.sessionIdleMs) && (session.userId == null || activeUser(session));
   return asyncRoute(async (req, res, next) => {
     req.authConfig = authConfig;
     req.cookies = parseCookies(req.headers.cookie);
@@ -51,164 +45,79 @@ function attachSessionMiddleware({ prisma, authConfig }) {
     const raw = req.cookies[authConfig.sessionCookieName];
     if (raw !== undefined) {
       if (TOKEN.test(raw)) {
-        const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(raw) }, include: { user: true } });
-        if (session && session.expiresAt > new Date() && session.user?.status === 'active' && session.user.emailVerifiedAt) {
-          req.auth = { user: session.user, session, rawToken: raw };
-          res.locals.currentUser = { id: session.user.id, email: session.user.email };
-          res.locals.csrfToken = session.csrfToken;
+        let session = await prisma.session.findUnique({ where: { sidHash: hashToken(raw) }, include: { user: true } });
+        // Read latency must not turn a timestamp captured before the DB wait into new activity.
+        const now = clock(), idleCutoff = new Date(now.getTime() - authConfig.sessionIdleMs);
+        if (isCurrent(session, now)) {
+          // Never upsert: logout may have deleted this row between read and touch.
+          const touched = await prisma.session.updateMany({
+            where: { sidHash: session.sidHash, expiresAt: { gt: now }, lastSeenAt: { gt: idleCutoff, lte: now } }, data: { lastSeenAt: now }
+          });
+          if (touched.count === 1) session = { ...session, lastSeenAt: now };
+          else {
+            // A newer overlapping request can already have advanced lastSeenAt. Distinguish
+            // that harmless no-op from a row revoked/expired during the update attempt.
+            session = await prisma.session.findUnique({ where: { sidHash: session.sidHash }, include: { user: true } });
+            if (!session || session.lastSeenAt <= now) session = null;
+          }
+          if (isCurrent(session, clock())) {
+            const user = activeUser(session) ? session.user : null;
+            req.auth = { user, session, rawToken: raw };
+            res.locals.currentUser = user ? { id: user.id, email: user.email } : null;
+            res.locals.csrfToken = session.csrfToken;
+          } else clearSessionCookie(res, authConfig);
         } else {
-          if (session && session.expiresAt <= new Date()) await prisma.session.deleteMany({ where: { tokenHash: hashToken(raw), expiresAt: { lte: new Date() } } });
+          // Cleanup must not delete a valid row refreshed after our initial read.
+          if (session) await prisma.session.deleteMany({ where: { sidHash: session.sidHash,
+            OR: [{ expiresAt: { lte: now } }, { lastSeenAt: { lte: idleCutoff } }] } });
           clearSessionCookie(res, authConfig);
         }
       } else clearSessionCookie(res, authConfig);
     }
-    if (!req.auth.user) {
-      const raw = req.cookies[authConfig.csrfCookieName];
-      let anonymous = TOKEN.test(raw || '') ? await prisma.session.findUnique({ where: { tokenHash: hashToken(raw) } }) : null;
-      if (!anonymous || anonymous.userId !== null || anonymous.expiresAt <= new Date()) anonymous = null;
-      const formGet = ['GET', 'HEAD'].includes(req.method) && (req.path.startsWith('/auth/') || ['/forgot', '/reset', '/login', '/register', '/activate'].includes(req.path));
-      if (!anonymous && formGet) {
-        const sid = generateRawToken();
-        anonymous = await prisma.session.create({ data: { tokenHash: hashToken(sid), csrfToken: generateRawToken(), userId: null, expiresAt: new Date(Date.now() + authConfig.anonymousTtlMs) } });
-        res.append('Set-Cookie', serializeCookie(authConfig.csrfCookieName, sid, { ...cookieOptions(authConfig), maxAge: authConfig.anonymousTtlMs / 1000 }));
-      }
-      if (anonymous) {
-        req.auth.csrfSession = anonymous;
-        res.locals.csrfToken = anonymous.csrfToken;
-      }
+    if (!req.auth.session && req.method === 'GET' && FORM_PATHS.has(req.path)) {
+      const session = await createSessionForUser({ prisma, userId: null, authConfig, res });
+      req.auth = { user: null, session, rawToken: session.rawToken };
+      res.locals.csrfToken = session.csrfToken;
     }
     next();
   });
 }
-
+function requireLogin(req, res, next) {
+  if (req.auth?.user?.status === 'active' && req.auth.user.emailVerifiedAt && req.auth.session?.userId === req.auth.user.id) return next();
+  return res.redirect(303, '/login');
+}
 function requireCsrf(req, res, next) {
   const origin = req.get('Origin') || req.get('Referer');
   let validOrigin = true;
-  if (origin) {
-    try {
-      validOrigin = new URL(origin).origin === req.authConfig.appBaseUrl;
-    } catch {
-      validOrigin = false;
-    }
+  if (origin === 'null') {
+    // Native forms under no-referrer can send Origin:null. Fetch metadata must
+    // identify a same-origin browser request to the configured host; the
+    // session-bound CSRF token remains mandatory below in every case.
+    const expectedHost = new URL(req.authConfig.appBaseUrl).host.toLowerCase();
+    validOrigin = req.get('Sec-Fetch-Site') === 'same-origin' && req.get('Host')?.toLowerCase() === expectedHost;
+  } else if (origin) {
+    try { validOrigin = new URL(origin).origin === req.authConfig.appBaseUrl; } catch { validOrigin = false; }
   }
-  const expected = req.auth.session?.csrfToken || req.auth.csrfSession?.csrfToken;
-  if (!validOrigin || !safeEqualToken(expected, req.body?._csrf)) {
-    return res.status(403).render('error', { title: 'Không được phép', status: 403, message: 'Yêu cầu không hợp lệ.', back: '/dishes' });
+  if (!validOrigin || !safeEqualToken(req.auth?.session?.csrfToken, req.body?._csrf)) {
+    const code = !validOrigin ? 'ORIGIN_MISMATCH' : !req.auth?.session ? 'SESSION_EXPIRED' : 'FORM_STALE';
+    const retryPaths = new Map([
+      ['/register', '/register'], ['/login', '/login'], ['/activate', '/activate'],
+      ['/activate/resend', '/activate'], ['/forgot', '/forgot'], ['/reset', '/forgot'],
+      ['/logout', '/logout/confirm']
+    ]);
+    const retryPath = retryPaths.get(req.path) || '/login';
+    const messages = {
+      ORIGIN_MISMATCH: 'Địa chỉ gửi biểu mẫu không khớp với ứng dụng. Hãy mở lại biểu mẫu từ liên kết bên dưới.',
+      SESSION_EXPIRED: 'Phiên làm việc đã hết hạn hoặc cookie phiên không được gửi. Hãy mở lại biểu mẫu rồi thử lại.',
+      FORM_STALE: 'Biểu mẫu không còn khớp với phiên hiện tại. Hãy mở lại biểu mẫu, nhập lại thông tin và thử lại.'
+    };
+    return res.status(403).render('error', {
+      title: 'Vui lòng mở lại biểu mẫu', status: 403, code, message: messages[code],
+      back: validOrigin ? retryPath : new URL(retryPath, req.authConfig.appBaseUrl).href,
+      backLabel: req.path === '/register' ? 'Mở lại form đăng ký' : 'Mở lại biểu mẫu'
+    });
   }
   next();
 }
-
-function requireAdminAuth(req, res, next) {
-  if (req.auth.user) return next();
-  return res.redirect(303, '/login');
-}
-
-function createLoginRouter({ prisma, authConfig, recaptchaVerifier }) {
-  const router = express.Router();
-  const render = (res, status, email, next, errors = {}, notice = '') => res.status(status).render('auth/login', { title: 'Đăng nhập', values: { email, next }, errors, notice, recaptchaSiteKey: authConfig.recaptchaSiteKey });
-  router.get('/login', (req, res) => {
-    const next = sanitizeNextPath(req.query.next);
-    if (req.auth.user) return res.redirect(302, next);
-    return render(res, 200, '', next, {}, req.query.verified === '1' ? 'Email đã được xác minh.' : req.query.loggedOut === '1' ? 'Đã đăng xuất.' : req.query.reset === '1' ? 'Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập.' : '');
-  });
-
-  router.post('/login', requireCsrf, asyncRoute(async (req, res) => {
-    const email = normalizeEmail(req.body.email), next = sanitizeNextPath(req.body.next), password = req.body.password;
-    if (!validEmail(email) || typeof password !== 'string' || !password || [...password].length > 128) return render(res, 400, email.slice(0, 254), next, { form: 'Thông tin đăng nhập không hợp lệ.' });
-    const ip = req.ip || 'unknown';
-    const ipResult = await prisma.$transaction(async tx => {
-      await lockDatabaseWrite(tx);
-      const now = new Date();
-      const row = await tx.loginIpLimit.findUnique({ where: { ip } });
-      if (!row || now - row.windowStart >= 60000) {
-        await tx.loginIpLimit.upsert({ where: { ip }, create: { ip, count: 1, windowStart: now }, update: { count: 1, windowStart: now } });
-        return 0;
-      }
-      if (row.count >= 20) return Math.max(1, Math.ceil((60000 - (now - row.windowStart)) / 1000));
-      await tx.loginIpLimit.update({ where: { ip }, data: { count: { increment: 1 } } });
-      return 0;
-    });
-    if (ipResult) {
-      res.set('Retry-After', String(ipResult));
-      return render(res, 429, email, next, { form: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.' });
-    }
-    const existing = await prisma.loginAttempt.findUnique({ where: { email } });
-    if (existing?.lockedUntil && existing.lockedUntil > new Date() && Date.now() - existing.lastFailure < 86400000) {
-      res.set('Retry-After', String(Math.max(1, Math.ceil((existing.lockedUntil - Date.now()) / 1000))));
-      return render(res, 429, email, next, { form: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.' });
-    }
-    const captcha = await recaptchaVerifier.verifyToken(req.body['g-recaptcha-response'], ip, 'login');
-    if (!captcha.ok) return render(res, ['not-configured', 'network-error', 'provider-error'].includes(captcha.reason) ? 503 : 400, email, next, { form: 'Không thể xác minh reCAPTCHA. Vui lòng thử lại.' });
-
-    const outcome = await prisma.$transaction(async tx => {
-      await lockDatabaseWrite(tx);
-      const now = new Date();
-      let attempt = await tx.loginAttempt.findUnique({ where: { email } });
-      if (attempt && now - attempt.lastFailure >= 86400000) {
-        await tx.loginAttempt.delete({ where: { email } });
-        attempt = null;
-      }
-      if (attempt?.lockedUntil && attempt.lockedUntil > now) return { retry: Math.max(1, Math.ceil((attempt.lockedUntil - now) / 1000)) };
-      const user = await tx.user.findUnique({ where: { email } });
-      const valid = await verifyPassword(password, user?.passwordHash || DUMMY_HASH);
-      if (!user || !valid) {
-        const failures = (attempt?.failures || 0) + 1;
-        const delay = failures >= 3 ? Math.min(900, 30 * 2 ** Math.min(failures - 3, 5)) : 0;
-        await tx.loginAttempt.upsert({
-          where: { email },
-          create: { email, failures, lastFailure: now, lockedUntil: delay ? new Date(now.getTime() + delay * 1000) : null },
-          update: { failures, lastFailure: now, lockedUntil: delay ? new Date(now.getTime() + delay * 1000) : null }
-        });
-        return { invalid: true };
-      }
-      if (user.status !== 'active' || !user.emailVerifiedAt) return { unverified: true };
-      if (attempt) await tx.loginAttempt.delete({ where: { email } });
-      if (req.auth.rawToken) await tx.session.deleteMany({ where: { tokenHash: hashToken(req.auth.rawToken) } });
-      return { session: await createSessionForUser({ prisma: tx, userId: user.id, authConfig }) };
-    });
-
-    if (outcome.retry) {
-      res.set('Retry-After', String(outcome.retry));
-      return render(res, 429, email, next, { form: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.' });
-    }
-    if (outcome.invalid) return render(res, 401, email, next, { form: 'Email hoặc mật khẩu không đúng.' });
-    if (outcome.unverified) return render(res, 403, email, next, { form: 'Vui lòng xác minh email trước khi đăng nhập.' });
-    setSessionCookie(res, outcome.session.rawToken, authConfig);
-    return res.redirect(303, next);
-  }));
-
-  return router;
-}
-
-function createLogoutRouter({ prisma, authConfig }) {
-  const router = express.Router();
-  router.post('/logout', requireCsrf, asyncRoute(async (req, res) => {
-    const raw = req.auth.rawToken || req.cookies[authConfig.sessionCookieName];
-    if (typeof raw === 'string' && TOKEN.test(raw)) await prisma.session.deleteMany({ where: { tokenHash: hashToken(raw) } });
-    clearSessionCookie(res, authConfig);
-    res.redirect(303, '/auth/login?loggedOut=1');
-  }));
-  return router;
-}
-
-module.exports = {
-  resolveAuthConfig,
-  normalizeEmail,
-  hashPassword,
-  verifyPassword,
-  generateRawToken,
-  hashToken,
-  safeEqualToken,
-  parseCookies,
-  serializeCookie,
-  setSessionCookie,
-  clearSessionCookie,
-  sanitizeNextPath,
-  createSessionForUser,
-  attachSessionMiddleware,
-  requireCsrf,
-  requireAdminAuth,
-  createRecaptchaVerifier,
-  createLoginRouter,
-  createLogoutRouter
-};
+module.exports = { attachSessionMiddleware, requireLogin, requireCsrf, clearSessionCookie, setSessionCookie,
+  createSessionForUser, parseCookies, serializeCookie };

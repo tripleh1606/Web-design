@@ -6,11 +6,11 @@ Updated 2026-11-02. Planning only. Follow the [shared contract](auth-parallel-pl
 
 Feature owner: new restaurant/src/auth/registration.js, views/auth/register.ejs and activate.ejs, tests/auth-registration.test.js. The integrator owns schema, dependencies, shared config/credentials/session/throttle/captcha/mail, router mounts and existing shared forms/tests. Build against those real helpers; do not duplicate them.
 
-Schema prerequisites: User (original/normalized email, viewer role, pending/active status), ActivationChallenge with purpose/hash/expiry/attempts/lock/sent/used fields, ActivationAttempt per normalized email for existing and nonexistent accounts, shared request counters and CSRF sessions. SMTP and a matching Google CAPTCHA adapter are external prerequisites for live proof.
+Schema prerequisites: User (original/normalized email, viewer role, pending/active status), ActivationChallenge with purpose/hash/expiry/attempts/lock/sent/used fields, ActivationAttempt per normalized email for existing and nonexistent accounts, shared request counters and CSRF sessions. The project's chosen SMTP delivery service and Google v2 Checkbox adapter need real configuration for live proof. SMTP is an implementation choice, not a required protocol in the slides, and is independent of CAPTCHA version.
 
 ## Implementation steps
 
-1. GET /register renders email/password/confirmation, CSRF and CAPTCHA action register. GET /activate renders email/OTP and a separate POST resend form, both with CSRF. Never render submitted password or newly generated OTP.
+1. GET /register renders email/password/confirmation, CSRF and a reCAPTCHA v2 Checkbox. The widget supplies g-recaptcha-response to the native form. GET /activate renders email/OTP and a separate POST resend form, both with CSRF. Never render submitted password or newly generated OTP. V2 does not provide action/score or prove per-form purpose; the helper's register purpose is route context only.
 2. POST /register applies email/IP request limits and CSRF/validation, then verifies CAPTCHA at backend before password hashing, user writes or sending OTP. Use the published normalization/validator and ignore role/status/verified fields from body.
 3. Apply the common activation-mail dispatch cooldown/bucket for every normalized email before branching on existence, including active/unknown addresses. Repeated register and resend must not bypass each other's mail limits or disclose existence through 429 differences.
 4. For a new email, hash the password with Argon2id, generate a six-digit OTP via CSPRNG, hash it and transactionally create pending User(role=viewer) plus challenge. Race on unique email must converge on the same generic response/pending-resend rules, not expose a duplicate exception.
@@ -26,7 +26,7 @@ Use the real route/helpers with isolated fake adapters for deterministic HTTP te
 
 - New registration pending/viewer/hash and actual captured outbound test mail; body role=admin/status=active ignored.
 - New and existing email have identical success status/message; re-register pending leaves the original passwordHash unchanged.
-- Missing/invalid/reused/expired/wrong-action CAPTCHA cannot create user or send OTP; provider failure is technical 500.
+- Missing/invalid/reused/expired/wrong-hostname v2 CAPTCHA cannot create user or send OTP; provider failure is technical 500. Do not apply v3 action/score assertions to v2 responses or claim cross-form token binding when the same key is reused.
 - Activation wrong/expired/used/purpose mismatch/unknown yields generic INVALID_OTP; no activation/session.
 - Correct OTP atomically sets active, emailVerifiedAt and usedAt; replay fails; two concurrent claims have one winner.
 - Resend invalidates old OTP; cooldown and per-email/IP budgets cover direct register/resend calls; attempts and lockedUntil persist despite resends.

@@ -1,5 +1,7 @@
 # docRegister — Đăng ký, CAPTCHA và kích hoạt OTP
 
+> **Tài liệu lịch sử của nhánh SQLite (commit 2e81441).** Nhóm đã chốt PostgreSQL/Supabase cho week6. Cấu hình, API helper và kết quả test SQLite bên dưới không phải hợp đồng hoặc bằng chứng nghiệm thu hiện tại. Dùng [README hiện tại](restaurant/README.md), [plan chung](plan/auth-parallel-plan.md) và [quyết định ghép](restaurant/docs/auth-merge-resolution.md).
+
 Cập nhật: 02/11/2026. Mã nguồn: `week6/restaurant`, nhánh làm việc `feat-register`.
 
 Phần đăng ký đã được thay từ liên kết xác minh qua GET sang đăng ký SSR + Google reCAPTCHA v3 + OTP email theo [plan đăng ký](plan/auth-registration-english.md) và [hợp đồng chung](plan/auth-parallel-plan.md). Tài liệu này ghi rõ kết quả tự động đã kiểm chứng và phần provider bên ngoài còn cần cấu hình thật.

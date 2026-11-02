@@ -1,25 +1,50 @@
-<%- include('../partials/header', { title }) %>
-<section class="admin-content">
-  <h1>Kích hoạt tài khoản</h1>
-  <% if (notice) { %><p role="status"><%= notice %></p><% } %>
-  <% if (error) { %><p class="auth-error-code" data-error-code="<%= error.code %>"><%= error.code %></p><% } %>
-  <% Object.values(errors).forEach(message => { %><p class="form-alert" role="alert"><%= message %></p><% }) %>
-  <% if (activated) { %>
-    <p><a href="/login">Đăng nhập</a></p>
-  <% } else { %>
-    <form method="POST" action="/activate" class="form-card">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label>Email <input type="email" name="email" maxlength="254" value="<%= values.email %>" autocomplete="email" required></label>
-      <label>Mã OTP 6 chữ số <input type="text" name="otp" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" required></label>
-      <button type="submit">Kích hoạt</button>
-    </form>
-    <form method="POST" action="/activate/resend" class="form-card">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label>Email nhận mã mới <input type="email" name="email" maxlength="254" value="<%= values.email %>" autocomplete="email" required></label>
-      <button type="submit">Gửi lại mã OTP</button>
-    </form>
-    <p>Mã có hạn dùng. Gửi lại mã không xóa số lần nhập sai hoặc thời gian khóa.</p>
-    <p><a href="/login">Đăng nhập</a> · <a href="/register">Đăng ký</a></p>
-  <% } %>
+<%- include('../partials/header', { title, authPage: true }) %>
+<section class="auth-page" aria-labelledby="activate-title">
+  <div class="auth-panel">
+    <header class="auth-intro">
+      <span class="auth-eyebrow">Xác minh email · Bước 02</span>
+      <h1 id="activate-title"><%= activated ? 'Tài khoản đã sẵn sàng.' : 'Kích hoạt tài khoản.' %></h1>
+      <p><%= activated ? 'Email của bạn đã được xác minh. Đăng nhập để tiếp tục cùng Soucha.' : 'Nhập mã OTP được gửi đến email của bạn để hoàn tất đăng ký.' %></p>
+    </header>
+
+    <% if (notice) { %>
+      <div class="<%= code ? 'form-alert auth-alert' : 'auth-notice' %>" role="<%= code ? 'alert' : 'status' %>" <% if (code) { %>data-error-code="<%= code %>"<% } %>><%= notice %></div>
+    <% } %>
+
+    <% if (activated) { %>
+      <a class="button primary auth-submit" href="/login">Đến trang đăng nhập <span aria-hidden="true">↗</span></a>
+    <% } else { %>
+      <form method="POST" action="/activate" class="auth-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="field">
+          <label for="activate-email">Địa chỉ email</label>
+          <input id="activate-email" type="email" name="email" maxlength="254" value="<%= values.email %>" placeholder="ban@example.com" autocomplete="email" autocapitalize="none" spellcheck="false" required>
+        </div>
+        <div class="field">
+          <label for="activate-otp">Mã OTP</label>
+          <input id="activate-otp" type="text" name="otp" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" placeholder="Nhập mã gồm 6 chữ số" aria-describedby="activate-otp-hint" required>
+          <small id="activate-otp-hint" class="field-hint">Mã chỉ dùng một lần và có hiệu lực trong 10 phút.</small>
+        </div>
+        <button class="button primary auth-submit" type="submit">Kích hoạt tài khoản <span aria-hidden="true">↗</span></button>
+      </form>
+
+      <div class="auth-resend">
+        <h2>Chưa nhận được mã?</h2>
+        <p>Kiểm tra hộp thư rác hoặc yêu cầu gửi lại mã.</p>
+        <form method="POST" action="/activate/resend" class="auth-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="field">
+            <label for="resend-email">Email nhận mã</label>
+            <input id="resend-email" type="email" name="email" maxlength="254" value="<%= values.email %>" placeholder="ban@example.com" autocomplete="email" autocapitalize="none" spellcheck="false" required>
+          </div>
+          <button class="button secondary auth-resend-submit" type="submit">Gửi lại mã OTP <span aria-hidden="true">↗</span></button>
+          <p class="auth-helper">Chờ ít nhất 60 giây giữa hai lần gửi. Gửi lại không đặt lại số lần nhập sai.</p>
+        </form>
+      </div>
+
+      <div class="auth-switch">Đã kích hoạt? <a href="/login">Đăng nhập</a></div>
+      <a class="auth-secondary-link" href="/register">Tạo tài khoản khác</a>
+    <% } %>
+  </div>
 </section>
 <%- include('../partials/footer') %>

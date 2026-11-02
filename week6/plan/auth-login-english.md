@@ -14,7 +14,7 @@ One integrator owns restaurant/package.json/lock, prisma/schema.prisma, server.j
 
 ## Login and brute-force behavior
 
-GET /login is public and establishes/reuses an anonymous form session and CSRF token. Show email/password and server-driven CAPTCHA-required state; for the selected score-based provider, obtain a fresh login-action token at submit rather than reusing the old draft's v2 checkbox. On first POST reaching a CAPTCHA requirement without a token, return the form requesting it before verifying password.
+GET /login is public and establishes/reuses an anonymous form session and CSRF token. Show email/password and server-driven CAPTCHA-required state. The selected provider is reCAPTCHA v2 Checkbox: render the widget when the server requires it and submit its g-recaptcha-response with the native form. On first POST reaching a CAPTCHA requirement without a token, return the form requesting it before verifying password. V2 does not return action or score; a server purpose argument labels the route only and must not be described as token binding.
 
 POST /login order: check IP/email request rules and current lockedUntil → CSRF/input validation → CAPTCHA if required → password verification → active status → transaction/session creation. The source explicitly requires the limit check before CAPTCHA/password. All thresholds/window values come from the common policy.
 
@@ -40,7 +40,7 @@ CSRF token is tied to the current server-side session and rendered into every au
 
 Mount requireLogin before /dishes, /dishes/:id and every /admin handler; do not require role=admin in this block. All active users including viewer can manage CRUD. Anonymous, pending, expired or revoked sessions receive **303 Location: /login** for GET/POST/PATCH/DELETE and no CRUD queries/mutations. Auth forms and static assets remain public; the previous public menu becomes protected to satisfy slide 54.
 
-Header: anonymous login/register; authenticated escaped email and POST /logout with CSRF. Add auth/forgot/reset navigation. Admin POST forms, including delete/unlink/association forms, receive hidden CSRF. Auth/protected-data responses no-store; reset pages no-referrer and no third-party resources. Retain existing escaped EJS/error handling and sanitize logs.
+Header: anonymous login/register; authenticated escaped email and a link to GET /logout/confirm. The confirmation page sends POST /logout with shared CSRF and v2 proof. Add auth/forgot/reset navigation. Admin POST forms, including delete/unlink/association forms, receive hidden CSRF. Auth/protected-data responses no-store; reset pages no-referrer and no third-party resources. Retain existing escaped EJS/error handling and sanitize logs.
 
 ## Seed and testing
 

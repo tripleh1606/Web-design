@@ -7,6 +7,9 @@
     "web"
   ],
   "scripts": {
+    "postinstall": "node scripts/prepare-ui-assets.js",
+    "ui:assets": "node scripts/prepare-ui-assets.js",
+    "test:ui:browser": "node tests/ui-motion-browser.js",
     "setup": "node scripts/setup.js",
     "dev": "node scripts/dev.js",
     "start": "node scripts/dev.js",

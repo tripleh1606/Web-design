@@ -1,511 +1,234 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('../src/app');
-const { hashPassword, verifyPassword, hashToken, createSessionForUser } = require('../src/auth/session');
+const { createAuthStore } = require('./helpers/auth-store');
+const { hashPassword, verifyPassword, hashToken, generateRawToken } = require('../src/auth/credentials');
 
-async function fixture(fn) {
-  let nextUserId = 1;
-  let nextTokenId = 1;
-  const users = new Map();
-  const tokens = [];
-  const sessions = new Map();
-  const limits = new Map();
-  const sentEmails = [];
-
-  const defaultUser = {
-    id: nextUserId++,
-    email: 'user@example.com',
-    status: 'active',
-    passwordHash: await hashPassword('password123'),
-    emailVerifiedAt: new Date()
-  };
-  users.set(defaultUser.email, defaultUser);
-  users.set(defaultUser.id, defaultUser);
-
-  const pendingUser = {
-    id: nextUserId++,
-    email: 'pending@example.com',
-    status: 'pending',
-    passwordHash: await hashPassword('pending123'),
-    emailVerifiedAt: null
-  };
-  users.set(pendingUser.email, pendingUser);
-  users.set(pendingUser.id, pendingUser);
-
-  const prisma = {
-    dish: {}, chef: {}, ingredient: {}, dishIngredient: {}, chefDish: {},
-    async $executeRaw() {},
-    async $queryRaw() {},
-    async $transaction(callback) { return callback(this); },
-    user: {
-      async findUnique({ where }) {
-        if (where.email) return users.get(where.email) ? { ...users.get(where.email) } : null;
-        if (where.id) return users.get(where.id) ? { ...users.get(where.id) } : null;
-        return null;
-      },
-      async update({ where, data }) {
-        const u = users.get(where.id);
-        if (!u) throw new Error('User not found');
-        Object.assign(u, data);
-        return { ...u };
-      }
-    },
-    passwordReset: {
-      async create({ data }) {
-        const record = { id: nextTokenId++, usedAt: null, invalidatedAt: null, ...data };
-        tokens.push(record);
-        return { ...record };
-      },
-      async findUnique({ where }) {
-        const found = tokens.find(t => t.tokenHash === where.tokenHash);
-        return found ? { ...found } : null;
-      },
-      async updateMany({ where, data }) {
-        let count = 0;
-        for (const t of tokens) {
-          if (where.id !== undefined && t.id !== where.id) continue;
-          if (where.userId !== undefined && t.userId !== where.userId) continue;
-          if (where.usedAt === null && t.usedAt !== null) continue;
-          if (where.invalidatedAt === null && t.invalidatedAt !== null) continue;
-          if (where.id && where.id.not !== undefined && t.id === where.id.not) continue;
-          if (where.expiresAt && where.expiresAt.gt && !(t.expiresAt > where.expiresAt.gt)) continue;
-          Object.assign(t, data);
-          count++;
-        }
-        return { count };
-      }
-    },
-    session: {
-      async create({ data }) {
-        sessions.set(data.tokenHash, data);
-        return data;
-      },
-      async findUnique({ where }) {
-        const s = sessions.get(where.tokenHash);
-        if (!s) return null;
-        const u = users.get(s.userId);
-        return { ...s, user: u };
-      },
-      async deleteMany({ where }) {
-        let count = 0;
-        if (where.tokenHash) {
-          if (sessions.delete(where.tokenHash)) count++;
-        }
-        if (where.userId !== undefined) {
-          for (const [k, v] of [...sessions.entries()]) {
-            if (v.userId === where.userId) {
-              sessions.delete(k);
-              count++;
-            }
-          }
-        }
-        return { count };
-      }
-    },
-    passwordResetLimit: {
-      async findUnique({ where }) {
-        return limits.get(where.key) || null;
-      },
-      async upsert({ where, create, update }) {
-        const existing = limits.get(where.key);
-        if (existing) {
-          Object.assign(existing, update);
-          return existing;
-        }
-        const created = { ...create };
-        limits.set(where.key, created);
-        return created;
-      },
-      async update({ where, data }) {
-        const existing = limits.get(where.key);
-        if (existing) {
-          if (data.count?.increment) existing.count += data.count.increment;
-        }
-        return existing;
-      }
-    }
-  };
-
+async function fixture(run, options = {}) {
+  const originalHash = await hashPassword('original-password');
+  const users = [
+    { id: 1, email: 'User@example.com', emailOriginal: 'User@EXAMPLE.com', passwordHash: originalHash, status: 'active', role: 'viewer', emailVerifiedAt: new Date() },
+    { id: 2, email: 'pending@example.com', emailOriginal: 'pending@example.com', passwordHash: originalHash, status: 'pending', role: 'viewer', emailVerifiedAt: null }
+  ];
+  const prisma = createAuthStore({ users });
+  prisma.dish.findMany = async () => [];
+  const sent = [], logs = [];
+  let finishMail;
   const mailer = {
-    isConfigured: () => true,
-    async sendPasswordResetEmail(msg) { sentEmails.push({ type: 'reset', ...msg }); },
-    async sendPasswordChangedNotice(msg) { sentEmails.push({ type: 'notice', ...msg }); }
+    isConfigured: () => options.mailConfigured !== false,
+    async sendPasswordResetEmail(message) {
+      if (options.mailError) throw new Error('private SMTP token must not be logged');
+      sent.push({ type: 'reset', ...message });
+      if (finishMail) await finishMail;
+    },
+    async sendPasswordChangedNotice(message) { sent.push({ type: 'notice', ...message }); }
   };
-
-  const app = createApp({
-    prisma,
-    mailer,
-    logger: { error() {}, log() {}, warn() {} },
-    authConfig: { appBaseUrl: 'http://localhost:3001', recaptchaSiteKey: 'test' }
-  });
-
-  const server = app.listen(0);
+  const app = createApp({ prisma, mailer, logger: { error: (...args) => logs.push(args) },
+    authConfig: { appBaseUrl: 'http://localhost:3001' },
+    recaptchaVerifier: { async verify() { return { ok: true }; } } });
+  const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-
-  async function getCsrf(path = '/auth/forgot') {
-    const res = await fetch(base + path, { headers: { connection: 'close' } });
-    const html = await res.text();
-    const cookie = res.headers.get('set-cookie')?.match(/soucha_csrf=([^;]+)/)?.[1];
-    const token = html.match(/name="_csrf" value="([^"]+)"/)?.[1];
-    return { cookie, token, html, status: res.status, headers: res.headers };
+  let cookie = '', csrf = '';
+  async function request(path, { data, method, headers, identity } = {}) {
+    const response = await fetch(base + path, { redirect: 'manual', method: method || (data ? 'POST' : 'GET'),
+      headers: { connection: 'close', cookie: identity?.cookie ?? cookie, ...headers },
+      ...(data ? { body: new URLSearchParams(data) } : {}) });
+    const html = await response.text();
+    const newCookie = response.headers.getSetCookie().find(value => /^sid=[a-f0-9]{64}/.test(value));
+    if (newCookie && !identity) cookie = newCookie.split(';')[0];
+    if (!identity) csrf = html.match(/name="_csrf" value="([a-f0-9]{64})"/)?.[1] || csrf;
+    await new Promise(resolve => setImmediate(resolve));
+    return { response, status: response.status, html };
   }
-
-  try {
-    await fn({
-      base,
-      prisma,
-      users,
-      tokens,
-      sessions,
-      limits,
-      sentEmails,
-      getCsrf,
-      defaultUser,
-      pendingUser
-    });
-  } finally {
-    await new Promise(resolve => server.close(resolve));
+  const get = (path = '/forgot', opts) => request(path, opts);
+  async function post(path, data, options = {}) {
+    if (!csrf && !options.identity) await get();
+    return request(path, { ...options, data: { _csrf: options.identity?.csrf ?? csrf, ...data } });
   }
+  async function issue(userId = 1) {
+    const raw = generateRawToken();
+    const row = await prisma.passwordReset.create({ data: { userId, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + 900000) } });
+    return { raw, row };
+  }
+  async function session(userId = 1) {
+    const raw = generateRawToken(), token = generateRawToken();
+    await prisma.session.create({ data: { sidHash: hashToken(raw), userId, csrfToken: token,
+      createdAt: new Date(), lastSeenAt: new Date(), expiresAt: new Date(Date.now() + 3600000) } });
+    return { raw, cookie: `sid=${raw}`, csrf: token };
+  }
+  const forgot = email => post('/forgot', { email });
+  const reset = (raw, overrides = {}, opts) => post('/reset', { token: raw, password: 'replacement-password', confirmPassword: 'replacement-password', ...overrides }, opts);
+  try { await run({ prisma, users, originalHash, sent, logs, get, post, issue, session, forgot, reset,
+    holdMail: promise => { finishMail = promise; } }); }
+  finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 
-test('F01: POST /forgot returns same status 200 and message for existing and non-existing email, without raw token', async () => fixture(async ({ base, getCsrf, sentEmails }) => {
-  // 1. Existing email
-  const { cookie: c1, token: t1 } = await getCsrf('/auth/forgot');
-  const res1 = await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: {
-      cookie: `soucha_csrf=${c1}`,
-      'content-type': 'application/x-www-form-urlencoded',
-      connection: 'close'
-    },
-    body: new URLSearchParams({ email: 'user@example.com', _csrf: t1 })
-  });
-  assert.equal(res1.status, 200);
-  const html1 = await res1.text();
-  assert.match(html1, /Nếu email của bạn tồn tại trong hệ thống/);
-  // Ensure raw token is not exposed in HTML
-  assert.equal(html1.includes('token='), false);
-
-  // Wait for setImmediate mail dispatch
-  await new Promise(r => setTimeout(r, 50));
-  assert.equal(sentEmails.length, 1);
-  assert.equal(sentEmails[0].to, 'user@example.com');
-  assert.match(sentEmails[0].resetUrl, /\/auth\/reset\?token=[a-f0-9]{64}/);
-
-  // 2. Non-existing email
-  const { cookie: c2, token: t2 } = await getCsrf('/auth/forgot');
-  const res2 = await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: {
-      cookie: `soucha_csrf=${c2}`,
-      'content-type': 'application/x-www-form-urlencoded',
-      connection: 'close'
-    },
-    body: new URLSearchParams({ email: 'nonexistent@example.com', _csrf: t2 })
-  });
-  assert.equal(res2.status, 200);
-  const html2 = await res2.text();
-  assert.match(html2, /Nếu email của bạn tồn tại trong hệ thống/);
-
-  await new Promise(r => setTimeout(r, 50));
-  // No email sent for nonexistent user
-  assert.equal(sentEmails.length, 1);
+test('forgot existing/unknown emails share status and body, no raw reset token or SMTP wait', async () => fixture(async ({ forgot, sent, prisma, holdMail }) => {
+  let release;
+  holdMail(new Promise(resolve => { release = resolve; }));
+  const present = await forgot('User@EXAMPLE.com');
+  const absent = await forgot('missing@example.com');
+  // Only the preserved user-entered email differs.
+  assert.equal(present.status, 200); assert.equal(absent.status, 200);
+  assert.equal(present.html.replaceAll('User@example.com', 'EMAIL'), absent.html.replaceAll('missing@example.com', 'EMAIL'));
+  assert.equal(sent.length, 1); assert.equal(prisma.state.passwordResets.size, 1);
+  const raw = new URL(sent[0].resetUrl).searchParams.get('token');
+  assert.match(raw, /^[a-f0-9]{64}$/);
+  assert.equal(new URL(sent[0].resetUrl).pathname, '/reset');
+  assert.equal(present.html.includes(raw), false);
+  assert.equal([...prisma.state.passwordResets.values()][0].tokenHash, hashToken(raw));
+  release();
 }));
 
-test('F01: POST /forgot enforces email rate limiting (3 requests / 15m) and IP limiting', async () => fixture(async ({ base, getCsrf }) => {
-  const email = 'spam@example.com';
-  for (let i = 0; i < 3; i++) {
-    const { cookie, token } = await getCsrf('/auth/forgot');
-    const res = await fetch(base + '/auth/forgot', {
-      method: 'POST',
-      headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-      body: new URLSearchParams({ email, _csrf: token })
-    });
-    assert.equal(res.status, 200);
+test('forgot rate limits apply equally to active, pending and unknown emails across new browser sessions', async () => fixture(async ({ forgot, get }) => {
+  for (const email of ['User@example.com', 'pending@example.com', 'unknown@example.com']) {
+    for (let i = 0; i < 3; i++) assert.equal((await forgot(email)).status, 200);
+    const limited = await forgot(email);
+    assert.equal(limited.status, 429); assert.ok(Number(limited.response.headers.get('retry-after')) > 0);
+    await get('/forgot');
+    assert.equal((await forgot(email)).status, 429);
   }
-
-  // 4th request exceeds email limit
-  const { cookie: c4, token: t4 } = await getCsrf('/auth/forgot');
-  const res4 = await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${c4}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email, _csrf: t4 })
-  });
-  assert.equal(res4.status, 429);
-  assert.ok(Number(res4.headers.get('retry-after')) > 0);
 }));
 
-test('F02: New forgot request invalidates older unused reset tokens and sets 15m expiry', async () => fixture(async ({ base, getCsrf, tokens, sentEmails }) => {
-  // First request
-  const { cookie: c1, token: t1 } = await getCsrf('/auth/forgot');
-  await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${c1}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: 'user@example.com', _csrf: t1 })
-  });
-  await new Promise(r => setTimeout(r, 50));
-  assert.equal(tokens.length, 1);
-  assert.equal(tokens[0].invalidatedAt, null);
-  assert.equal(tokens[0].usedAt, null);
-  // 15 minutes = 900,000 ms
-  assert.ok(tokens[0].expiresAt - Date.now() <= 900000);
-  assert.ok(tokens[0].expiresAt - Date.now() > 890000);
-
-  // Second request for the same user
-  const { cookie: c2, token: t2 } = await getCsrf('/auth/forgot');
-  await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${c2}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: 'user@example.com', _csrf: t2 })
-  });
-  await new Promise(r => setTimeout(r, 50));
-  assert.equal(tokens.length, 2);
-  // Old token is invalidated
-  assert.ok(tokens[0].invalidatedAt instanceof Date);
-  // New token is active
-  assert.equal(tokens[1].invalidatedAt, null);
+test('new forgot request invalidates previous reset without changing password or sessions', async () => fixture(async ({ issue, forgot, prisma, originalHash, session }) => {
+  const old = await issue(), device = await session();
+  assert.equal((await forgot('User@example.com')).status, 200);
+  assert.ok(prisma.state.passwordResets.get(old.row.id).invalidatedAt);
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
+  assert.ok(prisma.state.sessions.has(hashToken(device.raw)));
 }));
 
-test('F03: GET /reset?token=... renders reset form; does NOT consume token or alter sessions', async () => fixture(async ({ base, getCsrf, tokens, sentEmails, defaultUser }) => {
-  const { cookie, token } = await getCsrf('/auth/forgot');
-  await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: defaultUser.email, _csrf: token })
-  });
-  await new Promise(r => setTimeout(r, 50));
-  const rawToken = sentEmails[0].resetUrl.split('token=')[1];
-
-  // GET /auth/reset?token=...
-  const res = await fetch(base + `/auth/reset?token=${rawToken}`, { headers: { connection: 'close' } });
-  assert.equal(res.status, 200);
-  const html = await res.text();
-  assert.match(html, /Đặt lại mật khẩu/);
-  assert.match(html, /name="password"/);
-  assert.match(html, /name="confirmPassword"/);
-
-  // Assert token was NOT consumed
-  assert.equal(tokens[0].usedAt, null);
-  assert.equal(tokens[0].invalidatedAt, null);
-
-  // Verify security headers
-  assert.equal(res.headers.get('cache-control'), 'no-store');
-  assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+test('GET/HEAD reset is read-only for valid token; the shared GET/HEAD/POST quota stops lookup before consumption', async () => fixture(async ({ issue, get, reset, prisma, originalHash, session }) => {
+  const token = await issue(), device = await session();
+  await get('/forgot');
+  for (let i = 0; i < 20; i++) {
+    const response = await get(`/reset?token=${token.raw}`, { method: i % 2 ? 'HEAD' : 'GET' });
+    assert.equal(response.status, 200);
+    assert.equal(response.response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.response.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(prisma.state.passwordResets.get(token.row.id).usedAt, null);
+  }
+  let lookups = 0;
+  const oldFind = prisma.passwordReset.findUnique;
+  prisma.passwordReset.findUnique = async opts => { lookups++; return oldFind(opts); };
+  assert.equal((await reset(token.raw)).status, 429);
+  assert.equal(lookups, 0);
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
+  assert.ok(prisma.state.sessions.has(hashToken(device.raw)));
 }));
 
-test('F03: GET /reset enforces shared IP quota (returns 429 without consuming token)', async () => fixture(async ({ base, tokens, limits, defaultUser }) => {
-  // Populate limit to threshold for all possible loopback representations
-  limits.set('reset-ip:127.0.0.1', { count: 20, windowStart: new Date() });
-  limits.set('reset-ip:::1', { count: 20, windowStart: new Date() });
-
-  const res = await fetch(base + `/auth/reset?token=${'a'.repeat(64)}`, { headers: { connection: 'close' } });
-  assert.equal(res.status, 429);
-  assert.ok(Number(res.headers.get('retry-after')) > 0);
+test('reset rejects wrong, expired, used and superseded token with same error and no password change', async () => fixture(async ({ issue, reset, prisma, originalHash }) => {
+  const states = [{ expiresAt: new Date(0) }, { usedAt: new Date() }, { invalidatedAt: new Date() }];
+  const wrong = await reset(generateRawToken());
+  assert.equal(wrong.status, 200); assert.match(wrong.html, /INVALID_RESET_TOKEN/);
+  for (const state of states) {
+    const token = await issue();
+    Object.assign(prisma.state.passwordResets.get(token.row.id), state);
+    const response = await reset(token.raw);
+    assert.equal(response.status, 200); assert.match(response.html, /INVALID_RESET_TOKEN/);
+  }
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
 }));
 
-test('F04: POST /reset updates passwordHash, marks usedAt, invalidates other tokens, deletes sessions, 303 redirects', async () => fixture(async ({ base, getCsrf, tokens, sessions, sentEmails, defaultUser }) => {
-  // Create an active session for defaultUser
-  const sessionToken = 's'.repeat(64);
-  sessions.set(hashToken(sessionToken), {
-    id: 10,
-    userId: defaultUser.id,
-    tokenHash: hashToken(sessionToken),
-    csrfToken: 'c'.repeat(64),
-    expiresAt: new Date(Date.now() + 86400000)
-  });
-
-  // Request reset
-  const { cookie, token } = await getCsrf('/auth/forgot');
-  await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: defaultUser.email, _csrf: token })
-  });
-  await new Promise(r => setTimeout(r, 50));
-  const rawToken = sentEmails[0].resetUrl.split('token=')[1];
-
-  // Get CSRF from reset page
-  const resetPage = await getCsrf(`/auth/reset?token=${rawToken}`);
-  const postRes = await fetch(base + '/auth/reset', {
-    method: 'POST',
-    redirect: 'manual',
-    headers: {
-      cookie: `soucha_csrf=${resetPage.cookie}`,
-      'content-type': 'application/x-www-form-urlencoded',
-      connection: 'close'
-    },
-    body: new URLSearchParams({
-      token: rawToken,
-      password: 'newPassword123',
-      confirmPassword: 'newPassword123',
-      _csrf: resetPage.token
-    })
-  });
-
-  // Redirect 303 to login
-  assert.equal(postRes.status, 303);
-  assert.equal(postRes.headers.get('location'), '/auth/login?reset=1');
-
-  // Verify password changed
-  assert.equal(await verifyPassword('newPassword123', defaultUser.passwordHash), true);
-  assert.equal(await verifyPassword('password123', defaultUser.passwordHash), false);
-
-  // Verify token was claimed (usedAt)
-  assert.ok(tokens[0].usedAt instanceof Date);
-
-  // Verify all user sessions were deleted
-  assert.equal([...sessions.values()].filter(s => s.userId !== null).length, 0);
-
-  // Verify notice email sent
-  await new Promise(r => setTimeout(r, 50));
-  const noticeEmail = sentEmails.find(e => e.type === 'notice');
-  assert.ok(noticeEmail);
-  assert.equal(noticeEmail.to, defaultUser.email);
+test('password policy, CSRF and foreign origin stop reset without consuming token', async () => fixture(async ({ issue, reset, prisma, originalHash }) => {
+  const token = await issue();
+  assert.equal((await reset(token.raw, { password: 'short', confirmPassword: 'short' })).status, 200);
+  assert.equal((await reset(token.raw, { confirmPassword: 'different' })).status, 200);
+  assert.equal((await reset(token.raw, { _csrf: 'bad' })).status, 403);
+  assert.equal((await reset(token.raw, {}, { headers: { origin: 'https://evil.example' } })).status, 403);
+  assert.equal(prisma.state.passwordResets.get(token.row.id).usedAt, null);
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
 }));
 
-test('F05: Invalid/expired/used/superseded token returns status 200 INVALID_RESET_TOKEN', async () => fixture(async ({ base, getCsrf, tokens, sentEmails, defaultUser }) => {
-  // 1. Malformed token
-  const res1 = await fetch(base + '/auth/reset?token=short', { headers: { connection: 'close' } });
-  assert.equal(res1.status, 200);
-  assert.match(await res1.text(), /INVALID_RESET_TOKEN/);
-
-  // 2. Expired token
-  tokens.push({
-    id: 99,
-    userId: defaultUser.id,
-    tokenHash: hashToken('e'.repeat(64)),
-    expiresAt: new Date(Date.now() - 1000), // in the past
-    usedAt: null,
-    invalidatedAt: null
-  });
-  const res2 = await fetch(base + `/auth/reset?token=${'e'.repeat(64)}`, { headers: { connection: 'close' } });
-  assert.equal(res2.status, 200);
-  assert.match(await res2.text(), /INVALID_RESET_TOKEN/);
-
-  // 3. Already used token
-  tokens.push({
-    id: 100,
-    userId: defaultUser.id,
-    tokenHash: hashToken('u'.repeat(64)),
-    expiresAt: new Date(Date.now() + 100000),
-    usedAt: new Date(),
-    invalidatedAt: null
-  });
-  const res3 = await fetch(base + `/auth/reset?token=${'u'.repeat(64)}`, { headers: { connection: 'close' } });
-  assert.equal(res3.status, 200);
-  assert.match(await res3.text(), /INVALID_RESET_TOKEN/);
-
-  // 4. Superseded (invalidated) token
-  tokens.push({
-    id: 101,
-    userId: defaultUser.id,
-    tokenHash: hashToken('i'.repeat(64)),
-    expiresAt: new Date(Date.now() + 100000),
-    usedAt: null,
-    invalidatedAt: new Date()
-  });
-  const res4 = await fetch(base + `/auth/reset?token=${'i'.repeat(64)}`, { headers: { connection: 'close' } });
-  assert.equal(res4.status, 200);
-  assert.match(await res4.text(), /INVALID_RESET_TOKEN/);
-
-  // Attempting to POST with an invalid token returns 200 INVALID_RESET_TOKEN
-  const { cookie, token } = await getCsrf('/auth/forgot');
-  const postRes = await fetch(base + '/auth/reset', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({
-      token: 'i'.repeat(64),
-      password: 'attemptPassword123',
-      confirmPassword: 'attemptPassword123',
-      _csrf: token
-    })
-  });
-  assert.equal(postRes.status, 200);
-  assert.match(await postRes.text(), /INVALID_RESET_TOKEN/);
-  // Password unchanged
-  assert.equal(await verifyPassword('attemptPassword123', defaultUser.passwordHash), false);
+test('reset changes only password, consumes once, invalidates other tokens, revokes every user session and redirects without auto login', async () => fixture(async ({ issue, reset, prisma, originalHash, sent, session, get, post }) => {
+  const token = await issue(), otherToken = await issue(), a = await session(), b = await session(), otherUser = await session(2);
+  const result = await reset(token.raw, {}, { identity: a });
+  assert.equal(result.status, 303); assert.equal(result.response.headers.get('location'), '/login');
+  assert.match(result.response.headers.get('set-cookie'), /sid=;.*Max-Age=0/);
+  const user = prisma.state.users.get(1);
+  assert.notEqual(user.passwordHash, originalHash);
+  assert.match(user.passwordHash, /^\$argon2id\$/);
+  assert.equal(await verifyPassword('replacement-password', user.passwordHash), true);
+  assert.equal(user.role, 'viewer'); assert.equal(user.status, 'active'); assert.ok(user.emailVerifiedAt);
+  assert.ok(prisma.state.passwordResets.get(token.row.id).usedAt);
+  assert.ok(prisma.state.passwordResets.get(otherToken.row.id).invalidatedAt);
+  assert.equal(prisma.state.sessions.has(hashToken(a.raw)), false); assert.equal(prisma.state.sessions.has(hashToken(b.raw)), false);
+  assert.ok(prisma.state.sessions.has(hashToken(otherUser.raw)));
+  assert.equal(sent.filter(message => message.type === 'notice').length, 1);
+  assert.equal((await get('/dishes', { identity: a })).status, 303);
+  assert.equal((await get('/dishes', { identity: b })).status, 303);
+  assert.match((await reset(token.raw)).html, /INVALID_RESET_TOKEN/);
+  await get('/login');
+  const oldLogin = await post('/login', { email: 'User@example.com', password: 'original-password' });
+  assert.equal(oldLogin.status, 200); assert.match(oldLogin.html, /INVALID_CREDENTIALS/);
+  assert.equal((await post('/login', { email: 'User@example.com', password: 'replacement-password' })).status, 303);
 }));
 
-test('F06: Two concurrent reset POSTs have exactly one winner', async () => fixture(async ({ base, getCsrf, defaultUser, sentEmails }) => {
-  const { cookie, token } = await getCsrf('/auth/forgot');
-  await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: defaultUser.email, _csrf: token })
-  });
-  await new Promise(r => setTimeout(r, 50));
-  const rawToken = sentEmails[0].resetUrl.split('token=')[1];
-
-  const resetPage1 = await getCsrf(`/auth/reset?token=${rawToken}`);
-  const resetPage2 = await getCsrf(`/auth/reset?token=${rawToken}`);
-
-  const [res1, res2] = await Promise.all([
-    fetch(base + '/auth/reset', {
-      method: 'POST',
-      redirect: 'manual',
-      headers: { cookie: `soucha_csrf=${resetPage1.cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-      body: new URLSearchParams({ token: rawToken, password: 'passwordOne1', confirmPassword: 'passwordOne1', _csrf: resetPage1.token })
-    }),
-    fetch(base + '/auth/reset', {
-      method: 'POST',
-      redirect: 'manual',
-      headers: { cookie: `soucha_csrf=${resetPage2.cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-      body: new URLSearchParams({ token: rawToken, password: 'passwordTwo2', confirmPassword: 'passwordTwo2', _csrf: resetPage2.token })
-    })
-  ]);
-
-  const statuses = [res1.status, res2.status].sort();
-  assert.deepEqual(statuses, [200, 303]);
+test('reset pending account preserves pending status and verification, without clearing another signed-in account cookie', async () => fixture(async ({ issue, reset, prisma, session, post, get }) => {
+  const token = await issue(2), active = await session(1);
+  const result = await reset(token.raw, {}, { identity: active });
+  assert.equal(result.status, 303);
+  assert.equal(result.response.headers.get('set-cookie'), null);
+  assert.equal(prisma.state.users.get(2).status, 'pending');
+  assert.equal(prisma.state.users.get(2).emailVerifiedAt, null);
+  assert.ok(prisma.state.sessions.has(hashToken(active.raw)));
+  await get('/login');
+  assert.equal((await post('/login', { email: 'pending@example.com', password: 'replacement-password' })).status, 200);
+  assert.equal([...prisma.state.sessions.values()].some(row => row.userId === 2), false);
 }));
 
-test('F07: Pending unverified user can reset password, but remains pending (not activated)', async () => fixture(async ({ base, getCsrf, pendingUser, sentEmails }) => {
-  assert.equal(pendingUser.emailVerifiedAt, null);
-
-  // Request reset for pending user
-  const { cookie, token } = await getCsrf('/auth/forgot');
-  await fetch(base + '/auth/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: pendingUser.email, _csrf: token })
-  });
-  await new Promise(r => setTimeout(r, 50));
-  const rawToken = sentEmails[0].resetUrl.split('token=')[1];
-
-  // Perform reset
-  const resetPage = await getCsrf(`/auth/reset?token=${rawToken}`);
-  const postRes = await fetch(base + '/auth/reset', {
-    method: 'POST',
-    redirect: 'manual',
-    headers: { cookie: `soucha_csrf=${resetPage.cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({
-      token: rawToken,
-      password: 'newPendingPassword123',
-      confirmPassword: 'newPendingPassword123',
-      _csrf: resetPage.token
-    })
-  });
-  assert.equal(postRes.status, 303);
-
-  // Password was updated
-  assert.equal(await verifyPassword('newPendingPassword123', pendingUser.passwordHash), true);
-
-  // User remains unverified (NOT activated)
-  assert.equal(pendingUser.emailVerifiedAt, null);
+test('two concurrent reset requests have one successful claim in serialized fixture', async () => fixture(async ({ issue, reset, prisma }) => {
+  const token = await issue();
+  const results = await Promise.all([reset(token.raw), reset(token.raw)]);
+  assert.equal(results.filter(result => result.status === 303).length, 1);
+  assert.equal(results.filter(result => result.html.includes('INVALID_RESET_TOKEN')).length, 1);
+  assert.ok(prisma.state.passwordResets.get(token.row.id).usedAt);
 }));
 
-test('Root paths /forgot and /reset work identically to /auth/forgot and /auth/reset', async () => fixture(async ({ base, getCsrf, defaultUser, sentEmails }) => {
-  const { cookie, token } = await getCsrf('/forgot');
-  const res = await fetch(base + '/forgot', {
-    method: 'POST',
-    headers: { cookie: `soucha_csrf=${cookie}`, 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
-    body: new URLSearchParams({ email: defaultUser.email, _csrf: token })
-  });
-  assert.equal(res.status, 200);
-  await new Promise(r => setTimeout(r, 50));
-  const rawToken = sentEmails[0].resetUrl.split('token=')[1];
+test('reset transaction rollback restores password, usedAt, other tokens and sessions after store error', async () => fixture(async ({ issue, reset, prisma, originalHash, session }) => {
+  const token = await issue(), other = await issue(), device = await session();
+  prisma.session.deleteMany = async () => { throw new Error('store unavailable'); };
+  assert.equal((await reset(token.raw)).status, 500);
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
+  assert.equal(prisma.state.passwordResets.get(token.row.id).usedAt, null);
+  assert.equal(prisma.state.passwordResets.get(other.row.id).invalidatedAt, null);
+  assert.ok(prisma.state.sessions.has(hashToken(device.raw)));
+}));
 
-  const getReset = await fetch(base + `/reset?token=${rawToken}`, { headers: { connection: 'close' } });
-  assert.equal(getReset.status, 200);
-  assert.match(await getReset.text(), /Đặt lại mật khẩu/);
+test('reset rechecks fresh expiry after User lock and after asynchronous password hashing', async () => fixture(async ({ issue, reset, prisma, originalHash }) => {
+  const token = await issue();
+  prisma.$queryRaw = async () => { prisma.state.passwordResets.get(token.row.id).expiresAt = new Date(0); return []; };
+  const result = await reset(token.raw);
+  assert.match(result.html, /INVALID_RESET_TOKEN/);
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
+  assert.equal(prisma.state.passwordResets.get(token.row.id).usedAt, null);
+}));
+
+test('conditional claim failure does not mutate password or sessions', async () => fixture(async ({ issue, reset, prisma, originalHash, session }) => {
+  const token = await issue(), device = await session();
+  const updateMany = prisma.passwordReset.updateMany;
+  prisma.passwordReset.updateMany = async opts => opts.where.id === token.row.id ? { count: 0 } : updateMany(opts);
+  assert.match((await reset(token.raw)).html, /INVALID_RESET_TOKEN/);
+  assert.equal(prisma.state.users.get(1).passwordHash, originalHash);
+  assert.ok(prisma.state.sessions.has(hashToken(device.raw)));
+}));
+
+test('missing mail configuration is an equal technical failure; delivery errors log only safe codes', async () => {
+  await fixture(async ({ forgot, prisma }) => {
+    assert.equal((await forgot('User@example.com')).status, 500);
+    assert.equal((await forgot('missing@example.com')).status, 500);
+    assert.equal(prisma.state.passwordResets.size, 0);
+  }, { mailConfigured: false });
+  await fixture(async ({ forgot, logs }) => {
+    assert.equal((await forgot('User@example.com')).status, 200);
+    assert.match(JSON.stringify(logs), /SMTP_DELIVERY_FAILED/);
+    assert.doesNotMatch(JSON.stringify(logs), /private SMTP token/);
+  }, { mailError: true });
+});
+
+test('rate limiter/store failures fail closed instead of using an in-memory fallback', async () => fixture(async ({ forgot, prisma }) => {
+  prisma.rateLimitBucket.findUnique = async () => { throw new Error('DB unavailable'); };
+  assert.equal((await forgot('User@example.com')).status, 500);
+  assert.equal(prisma.state.passwordResets.size, 0);
 }));

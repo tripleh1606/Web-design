@@ -150,6 +150,14 @@ UI mặc định 12 món/lượt, chọn 12 / 24 / 36 / 48 / 96 để khớp 4 m
 
 Đổi điều kiện hoặc kiểu xem bắt đầu lại từ đầu, không trộn response cũ. Tải tiếp lỗi giữ cards cũ và thử lại đúng trang. [Đối chiếu HTML bài giảng](./docs/doi-chieu-html-pagination.md). Kiểm tra riêng UI bằng `npm run test:pagination:browser`; ảnh và báo cáo tạo trong `tests/results/`.
 
+## UI và chuyển động
+
+Hero dùng ly matcha 3D minh họa, chuyển động nhẹ theo chuột và tiến độ cuộn xuống thực đơn. Card mới hiện theo nhóm; hover/focus có phản hồi. Đổi bộ lọc giữ vị trí và focus, đổi trang số đưa tới vùng kết quả; hero được tái sử dụng khi chỉ đổi query. Back/Forward khôi phục vị trí trong nội dung hiện có; hai kiểu nối thêm vẫn bắt đầu lại từ trang 1.
+
+Three.js **0.180.0** được phục vụ local trong `web/public/vendor/three`, kèm MIT license. `npm install` / `npm ci` tự chuẩn bị asset qua `postinstall`; nếu cài với `--ignore-scripts`, chạy `npm run ui:assets`. 3D chỉ tải sau phản hồi menu đầu tiên; cảnh giới hạn 30 lần render/giây, dừng khi khuất hoặc tab ẩn và được giải phóng khi rời menu. Mobile ≤750px, giảm chuyển động, tiết kiệm dữ liệu hoặc lỗi WebGL/module dùng hình tĩnh; chức năng thực đơn vẫn hoạt động.
+
+Kiểm tra vòng đời, vị trí cuộn, bàn phím và fallback bằng `npm run test:ui:browser`. Ảnh/checklist kết quả nằm trong `tests/results/` và được gitignore. Kế hoạch: [UI-REDESIGN-PLAN.md](./UI-REDESIGN-PLAN.md).
+
 ## API contract
 
 **Tìm kiếm thông minh tự động:** `mode=smart` kết hợp full-text với bỏ dấu tiếng Việt, Levenshtein và trigram trên từng từ. UI không có ô Cách tìm. `houjicha whisk`, `houcha` và `houjcha whsik` tìm được **Houjicha Cold Whisk**; `kswh` là gợi ý ký tự yếu khi không có kết quả tốt hơn. Các ca `báh bì → Bánh bò` được kiểm tra trên database test riêng. Ô Sắp xếp chỉ cho chọn tên/giá/mới nhất; nếu chưa chọn thì hệ thống tự sắp xếp phù hợp. Cả ba kiểu phân trang giữ từ khóa và điều kiện. [Cách sử dụng, điểm tương đồng và giới hạn](./docs/full-text-search.md). Sau khi pull code, chạy `npm run db:search-setup` để cài extension/helper rồi restart `npm run dev`. `npm run test:fulltext:browser` kiểm tra UI bằng PostgreSQL cục bộ.

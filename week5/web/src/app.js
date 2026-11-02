@@ -4,11 +4,27 @@ import { el, link, dishImage } from './dom.js';
 import { createRecipeEditor } from './recipe-editor.js';
 import { recipePage, chefPage, ingredientForm, unlinkPage } from './relations.js';
 import { renderMenu } from './menu-pagination.js';
+import { createHero } from './hero-scene.js';
+import { createMotion } from './ui-motion.js';
 
 const main = document.querySelector('main');
 // Only routing lifecycle is shared. Records and lists belong to each page closure.
 let currentController;
+let menuOwner;
+let routeUrl;
+let restoringScroll = false;
+let scrollFrame;
+let restoreFrame;
+history.scrollRestoration = 'manual';
+function rememberScroll() {
+  if (!restoringScroll) history.replaceState({ ...history.state, souchaScroll: scrollY }, '', location.href);
+}
+window.addEventListener('scroll', () => {
+  cancelAnimationFrame(scrollFrame);
+  scrollFrame = requestAnimationFrame(rememberScroll);
+}, { passive: true });
 function navigate(href, { replace = false } = {}) {
+  rememberScroll();
   history[replace ? 'replaceState' : 'pushState']({}, '', href);
   renderRoute();
 }
@@ -20,7 +36,7 @@ document.addEventListener('click', (event) => {
   event.preventDefault();
   navigate(url.pathname + url.search + url.hash);
 });
-window.addEventListener('popstate', renderRoute);
+window.addEventListener('popstate', (event) => renderRoute({ restore: true, targetY: event.state?.souchaScroll || 0 }));
 
 function panel(kind, title, text, ...actions) {
   return el('section', { className: `state ${kind}`, role: kind === 'error' ? 'alert' : 'status', 'data-state': kind },
@@ -43,13 +59,21 @@ function adminTabs(resource) {
 function pageHeader(title, subtitle, action) {
   return el('div', { className: 'page-heading' }, el('div', {}, el('span', { className: 'eyebrow' }, 'SOUCHA / QUẢN TRỊ'), el('h1', {}, title), el('p', {}, subtitle)), action);
 }
-function createContext(adminResource) {
+function createContext(adminResource, isMenu = false) {
   const controller = new AbortController();
   currentController = controller;
-  const body = el('div', { className: 'page-body' });
-  main.replaceChildren(...(adminResource ? [adminTabs(adminResource)] : []), body);
-  main.focus({ preventScroll: true });
-  return { signal: controller.signal, body };
+  if (!isMenu && menuOwner) { menuOwner.controller.abort(); menuOwner = undefined; }
+  const reused = isMenu && Boolean(menuOwner);
+  if (isMenu && !menuOwner) {
+    const owner = new AbortController();
+    menuOwner = { controller: owner, body: el('div', { className: 'page-body menu-page' }), hero: createHero(owner.signal) };
+  }
+  const body = isMenu ? menuOwner.body : el('div', { className: 'page-body' });
+  if (!reused) {
+    main.replaceChildren(...(adminResource ? [adminTabs(adminResource)] : []), body);
+    main.focus({ preventScroll: true });
+  }
+  return { signal: controller.signal, body, hero: isMenu ? menuOwner.hero : undefined };
 }
 function loading(ctx) { ctx.body.replaceChildren(panel('loading', 'Đang tải dữ liệu…', 'Soucha đang chuẩn bị nội dung cho bạn.')); }
 
@@ -92,6 +116,7 @@ async function dishDetail(ctx, id) {
             el('dt', {}, 'Đường dẫn ảnh'), el('dd', {}, record.image || 'Chưa có'),
             el('dt', {}, 'Ngày tạo'), el('dd', {}, new Date(record.createdAt).toLocaleString('vi-VN'))),
           el('div', { className: 'actions' }, link(`/admin/dishes/${record.id}/edit`, 'Chỉnh sửa món', 'button secondary'), link(`/admin/dishes/${record.id}`, 'Công thức & nguyên liệu', 'button secondary')))));
+    createMotion(ctx.signal).reveal(ctx.body.querySelectorAll('.dish-detail'));
   } catch (error) { errorPanel(error, ctx); }
 }
 
@@ -253,11 +278,26 @@ async function deletePage(ctx, resource, id) {
   } catch (error) { errorPanel(error, ctx, base); }
 }
 
-function renderRoute() {
+function renderRoute({ restore = false, targetY = 0 } = {}) {
+  cancelAnimationFrame(scrollFrame);
+  cancelAnimationFrame(restoreFrame);
+  const previousY = scrollY;
+  const active = document.activeElement;
+  const focusKey = active?.id ? { id: active.id } : active?.name === 'q' ? { search: true } : null;
+  const selection = active?.name === 'q' ? [active.selectionStart, active.selectionEnd] : null;
+  const priorGridHeight = document.querySelector('[data-menu-grid]')?.getBoundingClientRect().height || 0;
   currentController?.abort();
   const url = new URL(location.href);
   const pathname = url.pathname.replace(/\/$/, '') || '/';
   if (pathname === '/' || pathname === '/admin') return navigate(pathname === '/' ? '/dishes' : '/admin/dishes', { replace: true });
+  const sameMenu = pathname === '/dishes' && routeUrl?.pathname === '/dishes' && Boolean(menuOwner);
+  const changedPage = sameMenu && Number(url.searchParams.get('page') || 1) !== Number(routeUrl.searchParams.get('page') || 1)
+    && ['q', 'mode', 'category', 'sort', 'available', 'minPrice', 'maxPrice', 'view'].every((key) => {
+      const fallback = key === 'view' ? 'pages' : key === 'mode' ? 'smart' : '';
+      return (url.searchParams.get(key) || fallback) === (routeUrl.searchParams.get(key) || fallback);
+    });
+  routeUrl = url;
+  restoringScroll = true;
   document.querySelectorAll('.site-header nav a').forEach((anchor) => anchor.setAttribute('aria-current',
     pathname.startsWith('/admin') === anchor.pathname.startsWith('/admin') ? 'page' : 'false'));
   const admin = pathname.match(/^\/admin\/(dishes|chefs|ingredients)(?:\/(new)|\/([^/]+)\/(edit|delete))?$/);
@@ -265,7 +305,9 @@ function renderRoute() {
   const ingredientNew = pathname.match(/^\/admin\/dishes\/([^/]+)\/ingredients\/new$/);
   const relation = pathname.match(/^\/admin\/(dishes|chefs)\/([^/]+)\/(ingredients|dishes)\/([^/]+)\/(edit|delete)$/);
   const validRelation = relation && ((relation[1] === 'dishes' && relation[3] === 'ingredients') || (relation[1] === 'chefs' && relation[3] === 'dishes' && relation[5] === 'delete'));
-  const ctx = createContext(admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined));
+  const ctx = createContext(admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined), pathname === '/dishes');
+  ctx.body.dataset.navigationReady = 'false';
+  ctx.reserveHeight = sameMenu ? priorGridHeight : 0;
   const helpers = { loading, errorPanel, pageHeader, navigate };
   let job;
   if (pathname === '/dishes') job = dishList(ctx, url);
@@ -281,7 +323,26 @@ function renderRoute() {
     document.title = 'Soucha · Không tìm thấy trang';
     ctx.body.append(panel('notFound', 'Không tìm thấy trang', 'Đường dẫn này không có trong Soucha.', link('/dishes', 'Về thực đơn', 'button')));
   }
-  job?.catch((error) => errorPanel(error, ctx));
-  window.scrollTo(0, 0);
+  if (!restore && !sameMenu) window.scrollTo(0, 0);
+  Promise.resolve(job).catch((error) => errorPanel(error, ctx)).finally(() => {
+    if (ctx.signal.aborted) return;
+    // Restore after the new layout has painted, with native anchoring disabled
+    // for the menu. Otherwise the browser may move the restored viewport again.
+    restoreFrame = requestAnimationFrame(() => {
+      if (ctx.signal.aborted) return;
+      const results = ctx.body.querySelector('.menu-results');
+      let destination = restore ? targetY : sameMenu ? previousY : 0;
+      if (!restore && changedPage && results) destination = Math.max(0, results.getBoundingClientRect().top + scrollY - 24);
+      if (restore || sameMenu) window.scrollTo({ top: Math.min(destination, Math.max(0, document.documentElement.scrollHeight - innerHeight)), behavior: 'instant' });
+      if (sameMenu && focusKey && !restore) {
+        const replacement = focusKey.id ? document.getElementById(focusKey.id) : ctx.body.querySelector('input[name=q]');
+        replacement?.focus({ preventScroll: true });
+        if (selection && replacement?.type === 'search') replacement.setSelectionRange(...selection);
+      }
+      restoringScroll = false;
+      ctx.body.dataset.navigationReady = 'true';
+      rememberScroll();
+    });
+  });
 }
 renderRoute();

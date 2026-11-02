@@ -4,8 +4,13 @@ const methodOverride = require('method-override');
 const { resources, parseId, validate, valuesFromRecord } = require('./validation');
 const { categories, categoryLabel, formatVND } = require('./soucha-menu');
 const { servingsPossible } = require('./recipe');
-const { resolveAuthConfig, attachSessionMiddleware, requireAdminAuth, requireCsrf, createRecaptchaVerifier, createLoginRouter, createLogoutRouter } = require('./auth/session');
-const { createSmtpMailer, createRegistrationRouter } = require('./auth/registration');
+const { resolveAuthConfig } = require('./auth/config');
+const { attachSessionMiddleware, requireLogin, requireCsrf, clearSessionCookie } = require('./auth/session');
+const { createRecaptchaVerifier } = require('./auth/captcha');
+const { createLoginRouter } = require('./auth/login');
+const { createLogoutRouter, createLogoutRecaptchaFromEnv } = require('./auth/logout');
+const { createRegistrationRouter } = require('./auth/registration');
+const { createSmtpMailer } = require('./auth/mail');
 const { createPasswordResetRouter } = require('./auth/password-reset');
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
@@ -16,7 +21,7 @@ function parsePositiveInt(value) {
   return Number.isSafeInteger(n) && n <= 2147483647 ? n : null;
 }
 
-function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authConfig: overrides, clock } = {}) {
+function createApp({ prisma, logger = console, mailer, recaptchaVerifier, logoutRecaptchaVerifier, authConfig: overrides } = {}) {
   if (!prisma) throw new Error('A Prisma client is required.');
 
   const app = express();
@@ -31,25 +36,24 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
   app.locals.categoryLabel = categoryLabel;
   app.locals.formatVND = formatVND;
   const authConfig = resolveAuthConfig(overrides);
-  const captcha = recaptchaVerifier || createRecaptchaVerifier({ ...process.env, APP_BASE_URL: authConfig.appBaseUrl, RECAPTCHA_SITE_KEY: authConfig.recaptchaSiteKey, RECAPTCHA_SECRET_KEY: authConfig.recaptchaSecretKey });
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/auth/') || ['/register', '/activate', '/activate/resend', '/login', '/forgot', '/reset'].includes(req.path)) res.set('Cache-Control', 'no-store');
+  const captcha = recaptchaVerifier || createRecaptchaVerifier(authConfig);
+  app.use(attachSessionMiddleware({ prisma, authConfig }));
+  app.use((_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    res.set('Referrer-Policy', 'no-referrer');
     next();
   });
-  app.use(attachSessionMiddleware({ prisma, authConfig }));
-  app.use('/auth', (_req, res, next) => { res.set('Cache-Control', 'no-store'); res.set('Referrer-Policy', 'no-referrer'); next(); });
-  const registrationRouter = createRegistrationRouter({ prisma, mailer: mailer || createSmtpMailer(), recaptchaVerifier: captcha, authConfig, logger, clock });
-  app.use('/', registrationRouter);
-  app.use('/auth', registrationRouter); // Compatibility for existing bookmarks; new forms use root URLs.
-  const loginRouter = createLoginRouter({ prisma, recaptchaVerifier: captcha, authConfig });
-  app.use('/auth', loginRouter);
-  app.use('/', loginRouter);
-  app.use('/auth', createLogoutRouter({ prisma, authConfig }));
-  const resetRouter = createPasswordResetRouter({ prisma, mailer: mailer || createSmtpMailer(), authConfig, logger });
-  app.use('/auth', resetRouter);
-  app.use('/', resetRouter);
-  app.use('/dishes', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, requireAdminAuth);
-  app.use('/admin', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, requireAdminAuth, (req, res, next) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : requireCsrf(req, res, next));
+  const authMailer = mailer || createSmtpMailer();
+  app.use(createRegistrationRouter({ prisma, mailer: authMailer, recaptchaVerifier: captcha, authConfig, logger }));
+  app.use(createPasswordResetRouter({ prisma, mailer: authMailer, authConfig, logger }));
+  app.use(createLoginRouter({ prisma, recaptchaVerifier: captcha, authConfig }));
+  app.use(createLogoutRouter({
+    prisma, authConfig, requireLogin, requireCsrf, clearSessionCookie,
+    recaptchaVerifier: logoutRecaptchaVerifier || createLogoutRecaptchaFromEnv({ ...process.env, APP_BASE_URL: authConfig.appBaseUrl })
+  }));
+  app.use(['/dishes', '/admin'], requireLogin, (req, res, next) => (
+    ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : requireCsrf(req, res, next)
+  ));
 
   const notFound = (res, back = '/dishes') => res.status(404).render('error', {
     title: 'Không tìm thấy',
@@ -65,7 +69,7 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
     const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 120) : '';
     const sort = ['price-asc', 'price-desc'].includes(req.query.sort) ? req.query.sort : 'default';
     const where = {
-      ...(q ? { name: { contains: q } } : {}),
+      ...(q ? { name: { contains: q, mode: 'insensitive' } } : {}),
       ...(category ? { category } : {})
     };
     const dishes = await prisma.dish.findMany({
@@ -406,9 +410,11 @@ function createApp({ prisma, logger = console, mailer, recaptchaVerifier, authCo
 
   app.use((_req, res) => notFound(res));
   app.use((error, _req, res, _next) => {
-    // Prisma/provider messages can embed query arguments. Log bounded identifiers only.
-    const code = typeof error.code === 'string' && /^[A-Z][A-Z0-9_]{0,39}$/.test(error.code) ? error.code : 'UNKNOWN';
-    logger.error('Restaurant SSR error:', { code });
+    // Keep credentials and raw connection URLs out of both logs and responses.
+    // Prisma/provider errors can embed SQL values and credentials. Log a fixed
+    // category and known safe error code, never the request or raw message.
+    const code = /^P\d{4}$/.test(error.code || '') ? error.code : 'UNEXPECTED';
+    logger.error('Restaurant SSR request failed', code);
     if (res.headersSent) return res.end();
     res.status(500).render('error', {
       title: 'Có lỗi xảy ra', status: 500,

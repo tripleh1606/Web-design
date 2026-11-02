@@ -1,340 +1,127 @@
-const { lockDatabaseWrite } = require('./database-lock');
 const express = require('express');
-const { validEmail } = require('./credentials');
-const {
-  normalizeEmail,
-  hashPassword,
-  generateRawToken,
-  hashToken,
-  requireCsrf,
-  clearSessionCookie
-} = require('./session');
+const { normalizeEmail, validateEmail, hashPassword, generateRawToken, hashToken, TOKEN } = require('./credentials');
+const { requireCsrf, clearSessionCookie } = require('./session');
+const { consume } = require('./throttle');
+const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+const WINDOW_MS = 15 * 60_000;
+const GENERIC_NOTICE = 'Nếu email của bạn tồn tại trong hệ thống, chúng tôi đã gửi liên kết đặt lại mật khẩu.';
 
-const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const TOKEN_REGEX = /^[a-f0-9]{64}$/;
-
-function getClientIp(req) {
-  const rawIp = req.ip || req.socket?.remoteAddress || 'unknown';
-  return typeof rawIp === 'string' ? rawIp.replace(/^::ffff:/, '') : 'unknown';
-}
-
-// In-memory fallback rate-limiter when DB model is not available
-const inMemoryLimits = new Map();
-
-async function checkRateLimit(prisma, key, maxRequests, windowMs) {
-  const now = new Date();
-  if (prisma && prisma.passwordResetLimit) {
-    return await prisma.$transaction(async tx => {
-      await lockDatabaseWrite(tx);
-      const row = await tx.passwordResetLimit.findUnique({ where: { key } });
-      if (!row || (now.getTime() - new Date(row.windowStart).getTime()) >= windowMs) {
-        await tx.passwordResetLimit.upsert({
-          where: { key },
-          create: { key, count: 1, windowStart: now },
-          update: { count: 1, windowStart: now }
-        });
-        return { allowed: true, retryAfter: 0 };
-      }
-      if (row.count >= maxRequests) {
-        const remainingMs = windowMs - (now.getTime() - new Date(row.windowStart).getTime());
-        const retryAfter = Math.max(1, Math.ceil(remainingMs / 1000));
-        return { allowed: false, retryAfter };
-      }
-      await tx.passwordResetLimit.update({
-        where: { key },
-        data: { count: { increment: 1 } }
-      });
-      return { allowed: true, retryAfter: 0 };
-    });
-  }
-
-  // Fallback in-memory
-  const entry = inMemoryLimits.get(key);
-  if (!entry || (now.getTime() - entry.windowStart.getTime()) >= windowMs) {
-    inMemoryLimits.set(key, { count: 1, windowStart: now });
-    return { allowed: true, retryAfter: 0 };
-  }
-  if (entry.count >= maxRequests) {
-    const remainingMs = windowMs - (now.getTime() - entry.windowStart.getTime());
-    const retryAfter = Math.max(1, Math.ceil(remainingMs / 1000));
-    return { allowed: false, retryAfter };
-  }
-  entry.count++;
-  return { allowed: true, retryAfter: 0 };
-}
-
-function validateResetInput(body) {
+function validateResetInput(body = {}) {
   const password = typeof body.password === 'string' ? body.password : '';
-  const confirmPassword = typeof body.confirmPassword === 'string' ? body.confirmPassword : '';
   const errors = {};
-  if (password.length < 8 || password.length > 128) {
-    errors.password = 'Mật khẩu phải có từ 8 đến 128 ký tự.';
-  }
-  if (confirmPassword !== password) {
-    errors.confirmPassword = 'Mật khẩu xác nhận không khớp.';
-  }
+  if (password.length < 8 || password.length > 128) errors.password = 'Mật khẩu phải có từ 8 đến 128 ký tự.';
+  if (body.confirmPassword !== password) errors.confirmPassword = 'Mật khẩu xác nhận không khớp.';
   return { errors, password };
 }
 
 function createPasswordResetRouter({ prisma, mailer, authConfig, logger = console }) {
   const router = express.Router();
+  const renderForgot = (res, status, email = '', errors = {}, notice = '') => res.status(status).render('auth/forgot', {
+    title: 'Quên mật khẩu', values: { email: email.slice(0, 254) }, errors, notice
+  });
+  const renderReset = (res, status, { invalid = false, token = '', errors = {} } = {}) => res.status(status).render('auth/reset', {
+    title: invalid ? 'Liên kết không hợp lệ' : 'Đặt lại mật khẩu', invalid, token, errors
+  });
+  const limited = (res, retryAfter) => {
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).render('error', {
+      title: 'Quá nhiều yêu cầu', status: 429, message: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.', back: '/login'
+    });
+  };
+  const quota = (purpose) => asyncRoute(async (req, res, next) => {
+    const email = normalizeEmail(req.body?.email).slice(0, 254);
+    const result = await prisma.$transaction(async tx => {
+      const ip = await consume(tx, { key: `${purpose}:ip:${hashToken(req.ip || 'unknown')}`, limit: 20, windowMs: WINDOW_MS });
+      if (!ip.allowed || purpose === 'reset') return ip;
+      return consume(tx, { key: `forgot:email:${hashToken(email)}`, limit: 3, windowMs: WINDOW_MS });
+    });
+    if (!result.allowed) return limited(res, result.retryAfter);
+    next();
+  });
+  const queueMail = (res, method, message) => {
+    res.once('finish', () => setImmediate(() => Promise.resolve().then(() => {
+      if (typeof mailer?.[method] !== 'function') throw new Error('Mailer unavailable');
+      return mailer[method](message);
+    }).catch(() => logger.error('Password email delivery failed', 'SMTP_DELIVERY_FAILED'))));
+  };
+  const validToken = (record, now = new Date()) => Boolean(record && !record.usedAt && !record.invalidatedAt && record.expiresAt > now);
 
-  const setSecurityHeaders = (res) => {
+  router.use((req, res, next) => {
     res.set('Cache-Control', 'no-store');
     res.set('Referrer-Policy', 'no-referrer');
-  };
-
-  const renderForgot = (res, status, email = '', errors = {}, notice = '') => {
-    setSecurityHeaders(res);
-    return res.status(status).render('auth/forgot', {
-      title: 'Quên mật khẩu',
-      values: { email },
-      errors,
-      notice
-    });
-  };
-
-  const renderReset = (res, status, { invalid = false, token = '', errors = {} } = {}) => {
-    setSecurityHeaders(res);
-    return res.status(status).render('auth/reset', {
-      title: invalid ? 'Liên kết không hợp lệ' : 'Đặt lại mật khẩu',
-      invalid,
-      token,
-      errors
-    });
-  };
-
-  // GET /forgot
-  router.get(['/forgot', '/auth/forgot'], (req, res) => {
-    if (req.auth?.user) return res.redirect(302, '/admin/dishes');
-    return renderForgot(res, 200);
+    next();
   });
-
-  // POST /forgot
-  router.post(['/forgot', '/auth/forgot'], requireCsrf, asyncRoute(async (req, res) => {
+  router.get('/forgot', (req, res) => req.auth.user ? res.redirect(303, '/admin/dishes') : renderForgot(res, 200));
+  router.post('/forgot', quota('forgot'), requireCsrf, asyncRoute(async (req, res) => {
     const email = normalizeEmail(req.body.email);
-    const ip = getClientIp(req);
-
-    // 1. Check IP rate limit (20 requests / 15 minutes)
-    const ipLimit = await checkRateLimit(prisma, `forgot-ip:${ip}`, 20, 15 * 60 * 1000);
-    if (!ipLimit.allowed) {
-      res.set('Retry-After', String(ipLimit.retryAfter));
-      return renderForgot(res, 429, email, { form: 'Quá nhiều yêu cầu từ địa chỉ IP này. Vui lòng thử lại sau.' });
+    if (!validateEmail(email)) return renderForgot(res, 200, email, { email: 'VALIDATION_FAILED: Email không hợp lệ.' });
+    if (!mailer?.isConfigured?.() || typeof mailer.sendPasswordResetEmail !== 'function') {
+      return renderForgot(res, 500, email, { form: 'Dịch vụ email chưa sẵn sàng.' });
     }
-
-    // 2. Check email rate limit (3 requests / 15 minutes) - applies to both existing and nonexistent emails
-    const emailLimitKey = email || `invalid:${ip}`;
-    const emailLimit = await checkRateLimit(prisma, `forgot-email:${emailLimitKey}`, 3, 15 * 60 * 1000);
-    if (!emailLimit.allowed) {
-      res.set('Retry-After', String(emailLimit.retryAfter));
-      return renderForgot(res, 429, email, { form: 'Quá nhiều yêu cầu cho email này. Vui lòng thử lại sau.' });
-    }
-
-    // 3. Validate email format
-    if (!validEmail(email)) {
-      return renderForgot(res, 400, email.slice(0, 254), { email: 'Email không hợp lệ.' });
-    }
-
-    // 4. Look up user
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (user) {
-      const rawToken = generateRawToken();
-      const tokenHash = hashToken(rawToken);
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes lifetime
-
-      await prisma.$transaction(async tx => {
-        await lockDatabaseWrite(tx);
-
-        // Invalidate all prior unused tokens for this user
-        await tx.passwordReset.updateMany({
-          where: {
-            userId: user.id,
-            usedAt: null,
-            invalidatedAt: null
-          },
-          data: { invalidatedAt: new Date() }
-        });
-
-        // Insert fresh token
-        await tx.passwordReset.create({
-          data: {
-            userId: user.id,
-            tokenHash,
-            expiresAt
-          }
-        });
-      });
-
-      // Dispatch email asynchronously after response commit; never return raw token in HTTP response or log it
-      const resetUrl = `${authConfig.appBaseUrl}/auth/reset?token=${rawToken}`;
-      setImmediate(async () => {
-        try {
-          if (mailer && typeof mailer.sendPasswordResetEmail === 'function') {
-            await mailer.sendPasswordResetEmail({ to: user.email, resetUrl });
-          }
-        } catch (err) {
-          logger.error('Failed to send password reset email:', err);
-        }
-      });
-    } else {
-      // Dummy crypto work to equalize response timing between existing and nonexistent email
-      hashToken(generateRawToken());
-    }
-
-    // Identical generic 200 response regardless of account existence
-    return renderForgot(
-      res,
-      200,
-      email,
-      {},
-      'Nếu email của bạn tồn tại trong hệ thống, chúng tôi đã gửi liên kết đặt lại mật khẩu.'
-    );
-  }));
-
-  // GET /reset?token=...
-  router.get(['/reset', '/auth/reset'], asyncRoute(async (req, res) => {
-    const ip = getClientIp(req);
-
-    // Shared IP quota (20 requests / 15 minutes) before token lookup
-    const ipLimit = await checkRateLimit(prisma, `reset-ip:${ip}`, 20, 15 * 60 * 1000);
-    if (!ipLimit.allowed) {
-      res.set('Retry-After', String(ipLimit.retryAfter));
-      return res.status(429).render('error', {
-        title: 'Quá nhiều yêu cầu',
-        status: 429,
-        message: 'Quá nhiều yêu cầu đặt lại mật khẩu từ địa chỉ này. Vui lòng thử lại sau.',
-        back: '/dishes'
-      });
-    }
-
-    const rawToken = req.query.token;
-    if (typeof rawToken !== 'string' || !TOKEN_REGEX.test(rawToken)) {
-      return renderReset(res, 200, { invalid: true });
-    }
-
-    const tokenRecord = await prisma.passwordReset.findUnique({
-      where: { tokenHash: hashToken(rawToken) }
-    });
-
-    const now = new Date();
-    if (!tokenRecord || tokenRecord.usedAt !== null || tokenRecord.invalidatedAt !== null || tokenRecord.expiresAt <= now) {
-      return renderReset(res, 200, { invalid: true });
-    }
-
-    // Valid token: render form without consuming token
-    return renderReset(res, 200, { invalid: false, token: rawToken });
-  }));
-
-  // POST /reset
-  router.post(['/reset', '/auth/reset'], requireCsrf, asyncRoute(async (req, res) => {
-    const ip = getClientIp(req);
-
-    // Shared IP quota with GET /reset
-    const ipLimit = await checkRateLimit(prisma, `reset-ip:${ip}`, 20, 15 * 60 * 1000);
-    if (!ipLimit.allowed) {
-      res.set('Retry-After', String(ipLimit.retryAfter));
-      return res.status(429).render('error', {
-        title: 'Quá nhiều yêu cầu',
-        status: 429,
-        message: 'Quá nhiều yêu cầu đặt lại mật khẩu từ địa chỉ này. Vui lòng thử lại sau.',
-        back: '/dishes'
-      });
-    }
-
-    const rawToken = req.body.token || req.query.token;
-    if (typeof rawToken !== 'string' || !TOKEN_REGEX.test(rawToken)) {
-      return renderReset(res, 200, { invalid: true });
-    }
-
-    const { errors, password } = validateResetInput(req.body);
-    if (Object.keys(errors).length > 0) {
-      return renderReset(res, 400, { invalid: false, token: rawToken, errors });
-    }
-
+    // Generate and hash regardless of account existence; never wait for SMTP.
+    const rawToken = generateRawToken(), tokenHash = hashToken(rawToken);
     const outcome = await prisma.$transaction(async tx => {
-      await lockDatabaseWrite(tx);
+      let user = await tx.user.findUnique({ where: { email } });
+      if (!user) return null;
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id} FOR UPDATE`;
+      user = await tx.user.findUnique({ where: { id: user.id } });
+      if (!user) return null;
       const now = new Date();
-      const tokenRecord = await tx.passwordReset.findUnique({
-        where: { tokenHash: hashToken(rawToken) }
+      await tx.passwordReset.updateMany({
+        where: { userId: user.id, usedAt: null, invalidatedAt: null }, data: { invalidatedAt: now }
       });
+      await tx.passwordReset.create({ data: { userId: user.id, tokenHash, expiresAt: new Date(+now + WINDOW_MS) } });
+      return { to: user.emailOriginal || user.email };
+    });
+    if (outcome) queueMail(res, 'sendPasswordResetEmail', {
+      to: outcome.to, resetUrl: `${authConfig.appBaseUrl}/reset?token=${rawToken}`
+    });
+    return renderForgot(res, 200, email, {}, GENERIC_NOTICE);
+  }));
 
-      if (!tokenRecord || tokenRecord.usedAt !== null || tokenRecord.invalidatedAt !== null || tokenRecord.expiresAt <= now) {
-        return { invalid: true };
-      }
+  // Express also routes HEAD here: all reset methods consume the same IP budget.
+  router.get('/reset', quota('reset'), asyncRoute(async (req, res) => {
+    const rawToken = req.query.token;
+    if (typeof rawToken !== 'string' || !TOKEN.test(rawToken)) return renderReset(res, 200, { invalid: true });
+    const record = await prisma.passwordReset.findUnique({ where: { tokenHash: hashToken(rawToken) } });
+    return validToken(record) ? renderReset(res, 200, { token: rawToken }) : renderReset(res, 200, { invalid: true });
+  }));
 
-      const user = await tx.user.findUnique({ where: { id: tokenRecord.userId } });
-      if (!user) return { invalid: true };
-
-      // Conditionally claim the token
+  router.post('/reset', quota('reset'), requireCsrf, asyncRoute(async (req, res) => {
+    const rawToken = req.body.token;
+    if (typeof rawToken !== 'string' || !TOKEN.test(rawToken)) return renderReset(res, 200, { invalid: true });
+    const { errors, password } = validateResetInput(req.body);
+    if (Object.keys(errors).length) return renderReset(res, 200, { token: rawToken, errors });
+    const tokenHash = hashToken(rawToken);
+    const initial = await prisma.passwordReset.findUnique({ where: { tokenHash } });
+    if (!validToken(initial)) return renderReset(res, 200, { invalid: true });
+    // Hash before taking the shared User lock, then revalidate every token rule.
+    const passwordHash = await hashPassword(password);
+    const outcome = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${initial.userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { id: initial.userId } });
+      const record = await tx.passwordReset.findUnique({ where: { tokenHash } });
+      const now = new Date();
+      if (!user || !validToken(record, now) || record.userId !== user.id) return { invalid: true };
       const claim = await tx.passwordReset.updateMany({
-        where: {
-          id: tokenRecord.id,
-          usedAt: null,
-          invalidatedAt: null,
-          expiresAt: { gt: now }
-        },
+        where: { id: record.id, userId: user.id, usedAt: null, invalidatedAt: null, expiresAt: { gt: now } },
         data: { usedAt: now }
       });
-
-      if (claim.count !== 1) {
-        return { invalid: true };
-      }
-
-      // Update password hash (preserve emailVerifiedAt, role, etc. Pending stays pending)
-      const passwordHash = await hashPassword(password);
-      await tx.user.update({
-        where: { id: user.id },
-        data: { passwordHash }
-      });
-
-      // Invalidate all other unused reset tokens for this user
+      if (claim.count !== 1) return { invalid: true };
+      await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
       await tx.passwordReset.updateMany({
-        where: {
-          userId: user.id,
-          id: { not: tokenRecord.id },
-          usedAt: null,
-          invalidatedAt: null
-        },
+        where: { userId: user.id, id: { not: record.id }, usedAt: null, invalidatedAt: null },
         data: { invalidatedAt: now }
       });
-
-      // Revoke all sessions for this user
-      await tx.session.deleteMany({
-        where: { userId: user.id }
-      });
-
-      return { ok: true, user };
-    });
-
-    if (outcome.invalid) {
-      return renderReset(res, 200, { invalid: true });
-    }
-
-    // If current browser session belongs to this user, clear cookie
-    if (req.auth?.user?.id === outcome.user.id) {
-      clearSessionCookie(res, authConfig);
-    }
-
-    // Send password changed notification asynchronously
-    setImmediate(async () => {
-      try {
-        if (mailer && typeof mailer.sendPasswordChangedNotice === 'function') {
-          await mailer.sendPasswordChangedNotice({ to: outcome.user.email });
-        }
-      } catch (err) {
-        logger.error('Failed to send password changed notice:', err);
-      }
-    });
-
-    // 303 redirect to login; no automatic login
-    return res.redirect(303, '/auth/login?reset=1');
+      await tx.session.deleteMany({ where: { userId: user.id } });
+      return { user };
+    }, { timeout: 15000 });
+    if (outcome.invalid) return renderReset(res, 200, { invalid: true });
+    if (req.auth.user?.id === outcome.user.id) clearSessionCookie(res, authConfig);
+    queueMail(res, 'sendPasswordChangedNotice', { to: outcome.user.emailOriginal || outcome.user.email });
+    return res.redirect(303, '/login');
   }));
-
   return router;
 }
 
-module.exports = {
-  createPasswordResetRouter,
-  validateResetInput,
-  checkRateLimit
-};
+module.exports = { createPasswordResetRouter, validateResetInput };

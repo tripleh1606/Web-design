@@ -1,7 +1,11 @@
 require('dotenv').config();
 
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL is missing. Copy .env.example to .env and set DATABASE_URL to file:./soucha.db for SQLite.');
+  console.error('DATABASE_URL is missing. Configure your PostgreSQL/Supabase URL in .env; see .env.example.');
+  process.exit(1);
+}
+if (!/^postgres(?:ql)?:\/\//.test(process.env.DATABASE_URL)) {
+  console.error('Week6 uses PostgreSQL/Supabase. DATABASE_URL must use postgres:// or postgresql://, not a SQLite file URL.');
   process.exit(1);
 }
 

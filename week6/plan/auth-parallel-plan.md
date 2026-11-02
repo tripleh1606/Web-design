@@ -28,10 +28,15 @@ Slide 54 không nêu ngoại lệ cho trang thực đơn: bảo vệ cả `GET /
 | Reset token | 32 byte ngẫu nhiên, hash trong DB; 15 phút; một lần; yêu cầu mới vô hiệu mọi token cũ chưa dùng |
 | Reset GET/HEAD/POST | Dùng chung giới hạn 20 request/15 phút/IP, bao phủ cả việc dò token trong URL; không khóa tài khoản theo token người ngoài tự gửi |
 | Session | Auth: idle timeout 30 phút, absolute timeout 24 giờ; anonymous CSRF session: 30 phút. Cookie `sid` HttpOnly, Path=/, host-only, SameSite=Lax, Secure khi triển khai HTTPS |
-| CAPTCHA | Google reCAPTCHA score-based; action `register` hoặc `login`, ngưỡng score 0.5 do nhóm chọn. Kiểm tra token hợp lệ, hostname, action và score ở backend |
-| Email delivery | SMTP/thư thử nghiệm thật, credential qua env; không phản hồi OTP/reset token cho browser |
+| CAPTCHA | Theo lựa chọn mới của người dùng: Google reCAPTCHA v2 Checkbox. Register luôn cần checkbox; login cần từ 3 lần sai. Backend kiểm tra kết quả siteverify và hostname, Google quyết định expiry/single-use; không kiểm tra action/score |
+| Email delivery | Giữ Nodemailer + SMTP để gửi OTP, link reset và thông báo đổi password; credential qua env; không phản hồi OTP/reset token cho browser. SMTP là lựa chọn triển khai, không phải công nghệ slide bắt buộc |
+| Logout CAPTCHA — yêu cầu bổ sung của người dùng | reCAPTCHA v2 Checkbox với cặp key siteverify riêng LOGOUT_RECAPTCHA_V2_SITE_KEY/SECRET_KEY; không kiểm tra action/score v3 trên token v2 |
 
-Các con số là quyết định có thể cấu hình, phải đồng bộ README và test. reCAPTCHA được chọn dạng score-based để kiểm tra sai purpose bằng action: đây là điều chỉnh so với draft v2 cũ. Với key v3 dùng API xác minh v3 tương ứng; với key Google Cloud dùng assessment và credential Cloud. **Chọn đúng một adapter theo loại key thực được cấp khi setup**, ghi rõ README; không trộn secret v3 với Cloud, không mock thành công trong app. Hợp đồng hành vi của hai adapter giống nhau: `verify(token, expectedAction, hostname) -> valid/invalid/providerError`. Provider lỗi phải fail closed (lỗi kỹ thuật), không xem là CAPTCHA đạt hoặc password sai.
+Các con số là quyết định có thể cấu hình, phải đồng bộ README và test. Người dùng chọn lại **reCAPTCHA v2 Checkbox**, thay lựa chọn v3 trước đó. Browser hiển thị widget và gửi `g-recaptcha-response` cùng form; backend gọi siteverify bằng cặp key v2. Không dùng action/score của v3 trên token v2. Tham số `purpose` trong helper `verify(token, purpose)` chỉ là ngữ cảnh route do server truyền (`register`/`login`), không phải thông tin Google xác nhận và không tạo ràng buộc token với từng form. Khi dùng chung key, không tuyên bố token chưa dùng của một form bị phân biệt bằng action ở form khác. Provider lỗi phải fail closed (lỗi kỹ thuật), không xem là CAPTCHA đạt hoặc password sai. Nếu Google cấp credential chỉ dùng assessment thì phải chọn adapter tương ứng; không đưa Cloud API key vào secret siteverify.
+
+Auth đọc cặp `RECAPTCHA_V2_SITE_KEY`/`RECAPTCHA_V2_SECRET_KEY`. Nếu cả hai giá trị đều vắng/rỗng, có thể dùng nguyên cặp `LOGOUT_RECAPTCHA_V2_SITE_KEY`/`LOGOUT_RECAPTCHA_V2_SECRET_KEY` đã cấu hình cho cùng hostname làm fallback. Nếu đã điền bất kỳ biến auth nào thì phải điền đủ cặp auth, không ghép site key của cặp này với secret của cặp khác; cấu hình thiếu phải fail closed. Logout vẫn cho phép cấu hình cặp riêng.
+
+Slide 17, 20, 42, 46, 50–51 và 55 yêu cầu email OTP, email reset và thông báo password đã đổi; không chỉ định SMTP hay nhà cung cấp. Nodemailer + SMTP đang có đáp ứng vai trò gửi email và hoạt động độc lập với CAPTCHA. Xem [cách cấu hình và nghiệm thu email](../restaurant/docs/email-setup.md); đổi phiên bản CAPTCHA không yêu cầu đổi SMTP.
 
 Counter nằm tại server trong PostgreSQL, không cookie/localStorage; dùng cùng luật cho email tồn tại và không tồn tại. IP chỉ lấy từ kết nối hoặc proxy tin cậy đã cấu hình, không tin tùy ý X-Forwarded-For. Chỉ login thành công mới xóa số lần sai theo email; không xóa giới hạn IP, không reset counter khi CAPTCHA đúng hoặc password đúng của user pending. Hết thời gian khóa login vẫn cần CAPTCHA nếu cửa sổ sai còn hiệu lực.
 
@@ -57,7 +62,7 @@ Các module dự kiến dưới `restaurant/src/auth/`:
 - `credentials.js`: chuẩn hóa/validate email, hash/verify password, random token/OTP, hash định danh và so sánh an toàn; dùng thư viện/crypto của nền tảng.
 - `session.js`: đọc cookie, tra store, gắn req.auth và res.locals.currentUser, tạo phiên ẩn danh cho form, tạo/rotate auth session, expire cookie, requireLogin, requireCsrf.
 - `throttle.js`: bucket theo email/IP và cửa sổ sai login, cập nhật nguyên tử.
-- `captcha.js`: adapter Google đúng loại key, trả invalid và providerError riêng; action cố định do route truyền, không lấy action/score/captchaPassed do browser khai.
+- `captcha.js`: adapter Google v2, trả invalid và providerError riêng; purpose chỉ là ngữ cảnh route cố định ở server. Không tin action/score/captchaPassed do browser khai, không kiểm tra action/score v3.
 - `mail.js`: sendActivationOtp, sendPasswordReset, sendPasswordChangedNotice; text/HTML escaped, timeout, không log payload chứa bí mật.
 - `registration.js`, `login.js`, `logout.js`, `password-reset.js`: route theo mục 4, không tự viết lại helper chung.
 
@@ -76,7 +81,8 @@ Không yêu cầu dựng framework auth mới. Khi code chọn thư viện cooki
 | POST /activate/resend | Rate limit/cooldown → CSRF → nếu pending thì thay mã, giữ attempts/lockedUntil; phản hồi chung 200 cho mọi email. Quá giới hạn: 429 RATE_LIMITED |
 | GET /login | Form email/password; hiển thị CAPTCHA khi server xác định cần |
 | POST /login | Rate limit/lock → CSRF/validate → CAPTCHA nếu cần → verify password → kiểm tra active → tạo sid mới → 303 /admin/dishes |
-| POST /logout | CSRF → hủy session hiện tại ở server → expire cookie sid → 303 /login |
+| GET /logout/confirm | Trang xác nhận logout + checkbox v2; requireLogin, không hủy session |
+| POST /logout | requireLogin → CSRF → reCAPTCHA v2 backend → hủy session hiện tại ở server → expire cookie sid → 303 /login |
 | GET /logout | 404 hoặc 405 theo lựa chọn chung: chọn 404; không thay đổi dữ liệu |
 | GET /forgot | Form email, truy cập được khi chưa đăng nhập |
 | POST /forgot | Rate limit → CSRF/validate → phản hồi chung 200 cho email có/không có. Nếu đủ điều kiện thì sinh reset token, lưu hash, gửi link email |
@@ -113,8 +119,9 @@ Slide 20 quy định 200 cho VALIDATION_FAILED/INVALID_OTP và 429 RATE_LIMITED;
 
 ### Logout và reset password
 
+- Theo yêu cầu bổ sung của người dùng, logout kiểm tra v2 sau requireLogin/CSRF; CAPTCHA thiếu/sai → form 200 và giữ phiên, config/provider lỗi → 500. V2 không có action/score, dùng cặp key logout riêng; không áp luật v3. GET /logout/confirm chỉ hiện form. Module và hợp đồng ghép được mô tả trong [hướng dẫn tích hợp](../restaurant/docs/logout-integration.md).
 - Logout hủy đúng sid hiện tại, await store trước clear-cookie/303. Cookie-only logout không đạt. DB lỗi không báo thành công. GET không có side effect. Back có thể hiện cache nhưng request mới phải bị chặn.
-- Request logout không có session/CSRF hợp lệ: chọn 403; session còn hợp lệ nhưng anonymous có CSRF hợp lệ thì có thể hủy phiên form và 303. Không cần bảo đảm thành công cho việc replay nguyên request logout cũ.
+- Theo phạm vi module đã chốt với người dùng: logout chỉ cho tài khoản authenticated; thiếu/expired/pending session → requireLogin trả 303 /login, CSRF/origin sai → 403. Không dùng logout này để hủy phiên form anonymous. Không cần bảo đảm thành công cho replay request logout cũ.
 - Forgot dùng cùng phản hồi/status/luật throttle cho mọi email. Chọn hỗ trợ user pending lẫn active; reset **không kích hoạt pending**, vẫn phải OTP. Link được tạo từ APP_BASE_URL tin cậy, không lấy Host tùy ý; HTTPS khi deploy.
 - GET/HEAD reset chạy limiter IP chung với POST trước khi kiểm tra token; vượt ngưỡng trả 429 nhưng không tiêu thụ token. GET reset chỉ đọc auth/reset state, không đánh usedAt hay hủy session. Token được đưa vào hidden input để POST lại; đây là token do người dùng đã mang từ link email, không phải API forgot trả token mới. Không log query token/body password.
 - POST reset giữ một transaction với khóa User và điều kiện token chưa dùng/chưa hết hạn/chưa invalidated. Đổi passwordHash + usedAt + vô hiệu mọi reset token chưa dùng + xóa mọi session của user trong cùng transaction. Thất bại rollback toàn bộ. Gửi thư báo đã đổi (không chứa password), redirect login, không reset failed-login counter để lách khóa.
@@ -134,14 +141,14 @@ Slide 20 quy định 200 cho VALIDATION_FAILED/INVALID_OTP và 429 RATE_LIMITED;
 | --- | --- |
 | Người tích hợp/login | package.json/lock, schema, server.js, src/app.js, src/auth/{config,credentials,session,throttle,captcha,mail,login}.js; header và mọi form admin; views/auth/login.ejs; tests shared/login/session; README/.env.example; prisma/seed-auth.js; script dọn session |
 | Đăng ký/OTP | src/auth/registration.js; views/auth/register.ejs, activate.ejs; tests/auth-registration.test.js |
-| Logout | src/auth/logout.js; tests/auth-logout.test.js |
+| Logout | src/auth/logout.js, recaptcha-v2.js; views/auth/logout.ejs; tests/auth-logout.test.js, recaptcha-v2.test.js; docs/logout-integration.md; cấu hình v2 trong .env.example |
 | Forgot/reset | src/auth/password-reset.js; views/auth/forgot.ejs, reset.ejs; tests/auth-password-reset.test.js |
 
 Không bắt buộc nhiều agent. Nếu chia việc, mỗi người không sửa file chung của người khác; phát hiện contract thiếu thì trao đổi với người tích hợp. Tất cả feature dùng helper chung, không có schema/cookie/normalization riêng.
 
 ## 7. Cấu hình, seed và chạy kiểm chứng
 
-Cấu hình qua .env.example, chỉ placeholder: DATABASE_URL, PORT, APP_BASE_URL; SESSION_IDLE_MINUTES/SESSION_MAX_HOURS; các TTL/threshold ở mục 2; SMTP_HOST/PORT/SECURE/USER/PASS/FROM; cấu hình reCAPTCHA đúng adapter (v3 site/secret hoặc Cloud project/site + credential server riêng); AUTH_SEED_EMAIL/AUTH_SEED_PASSWORD. Không commit .env, password seed, key hay credential. Không gửi credential server vào EJS; chỉ site key được công khai.
+Cấu hình qua .env.example, chỉ placeholder: DATABASE_URL, PORT, APP_BASE_URL; SESSION_IDLE_MINUTES/SESSION_MAX_HOURS (số nguyên dương, mặc định 30 phút/24 giờ); ANONYMOUS_SESSION_TTL_MS=1800000. Code nhận cả alias millisecond SESSION_IDLE_MS/SESSION_TTL_MS để giữ cấu hình cũ; nếu có cả hai cách thì phải bằng nhau sau quy đổi, mâu thuẫn làm khởi động thất bại. Các TTL/threshold ở mục 2; SMTP_HOST/PORT/SECURE/USER/PASS/FROM; RECAPTCHA_V2_SITE_KEY/RECAPTCHA_V2_SECRET_KEY hoặc nguyên cặp logout làm fallback theo mục 2; AUTH_SEED_EMAIL/AUTH_SEED_PASSWORD. Không commit .env, password seed, key hay credential. LOGOUT_RECAPTCHA_V2_SITE_KEY/LOGOUT_RECAPTCHA_V2_SECRET_KEY tiếp tục dùng cho logout. Không gửi credential server vào EJS; chỉ site key được công khai.
 
 Script `prisma/seed-auth.js` tạo ít nhất một user active có emailVerifiedAt và password hash từ env để demo login/forgot/CRUD (slide 49 notes). Chỉ chạy tường minh; nếu email đã có thì không ghi đè password/status hoặc tự kích hoạt pending. Không xóa dữ liệu khác, không seed lúc server khởi động.
 

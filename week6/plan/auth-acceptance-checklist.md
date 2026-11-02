@@ -1,6 +1,6 @@
 # Checklist đối chiếu HTML — xác thực SSR
 
-Cập nhật 02/11/2026. Tất cả ô còn trống vì **chưa triển khai/nghiệm thu**. Nguồn: [HTML, 66 slide](<D:/User_C_BackUp/Download/Xác thực tài khoản trên SSR.html>), gồm speaker notes. [Hợp đồng chung](auth-parallel-plan.md) chốt lựa chọn kỹ thuật và ngưỡng; số slide dưới đây đã đối chiếu section id trong HTML.
+Cập nhật 02/11/2026. Code đã tích hợp; các ô nghiệm thu vẫn để trống vì **chưa hoàn tất kiểm chứng PostgreSQL/provider/browser thật**. Nguồn: [HTML, 66 slide](<D:/User_C_BackUp/Download/Xác thực tài khoản trên SSR.html>), gồm speaker notes. [Hợp đồng chung](auth-parallel-plan.md) chốt lựa chọn kỹ thuật và ngưỡng; số slide dưới đây đã đối chiếu section id trong HTML.
 
 Mỗi mục khi chạy cần ghi: điều kiện đầu, thao tác/request, kết quả mong đợi/thực tế, trạng thái DB và đường dẫn bằng chứng. Test giả lập, PostgreSQL thật, browser và provider thật phải được ghi khác nhau; không dùng pass của mock để kết luận SMTP/CAPTCHA thật hoạt động.
 
@@ -26,14 +26,14 @@ Owner: nền tảng/login và registration; source slide 11–15, 25–27, 53, 5
 | Mã | Kiểm tra cần đạt |
 | --- | --- |
 | [ ] C01 | Register thiếu/sai CAPTCHA: không hash password/tạo user/gửi OTP; CAPTCHA hợp lệ + dữ liệu hợp lệ mới tiếp tục |
-| [ ] C02 | Token dùng lại/quá hạn/sai action/hostname/score không đạt bị từ chối; không tin captchaPassed/score/action từ body; provider outage fail closed |
+| [ ] C02 | V2 token dùng lại/quá hạn/sai hostname bị từ chối; không tin captchaPassed/score/action từ body; provider outage fail closed. V2 không có action/score; purpose của helper chỉ là ngữ cảnh route, không chứng minh token thuộc form nào |
 | [ ] C03 | Login sai đến ngưỡng, bỏ trường CAPTCHA hoặc POST trực tiếp: bị chặn trước verify password. Email không tồn tại áp cùng quy tắc |
 | [ ] C04 | CAPTCHA đúng nhưng password sai: failedCount tiếp tục tăng; CAPTCHA đúng hoặc pending-password đúng không xóa counter |
 | [ ] C05 | Đang khóa mà password và CAPTCHA đều đúng: 429, không authenticated session. Hết khóa nhưng cửa sổ sai còn hiệu lực vẫn cần CAPTCHA |
 | [ ] C06 | Xóa cookie/tab ẩn danh/đổi IP không reset counter theo email. Giới hạn IP chặn một nguồn thử nhiều email. Test concurrent failures không vượt ngưỡng do race |
 | [ ] C07 | Register/resend/forgot đều rate-limit email và IP kể cả email không tồn tại/active; re-register không vượt resend cooldown |
 
-Dùng số lần đủ chạm ngưỡng ở môi trường thử nghiệm, không gửi hàng loạt tới Google. Adapter test phục vụ các nhánh lỗi; minh chứng provider thành công/dùng lại phải dùng token thật và che giá trị. Lựa chọn reCAPTCHA không cần model câu đố CAPTCHA local; nếu đổi sang thư viện thì phải bổ sung challengeId/đáp án server/phiên/purpose/hạn/usedAt và test khác phiên.
+Dùng số lần đủ chạm ngưỡng ở môi trường thử nghiệm, không gửi hàng loạt tới Google. Adapter test phục vụ các nhánh lỗi; minh chứng provider thành công/dùng lại phải dùng token v2 thật và che giá trị. Register luôn hiện checkbox; login chỉ cần từ ngưỡng server. Lựa chọn reCAPTCHA không cần model câu đố CAPTCHA local; nếu đổi sang thư viện thì phải bổ sung challengeId/đáp án server/phiên/purpose/hạn/usedAt và test khác phiên. Với cặp v2 dùng chung, không tự đánh dấu bằng chứng sai action/cross-form purpose vì provider không cung cấp thuộc tính này.
 
 ## 3. Login, session, logout và bảo vệ CRUD
 
@@ -78,3 +78,13 @@ Owner: [password reset](auth-password-reset-english.md); slide 39–46, 55, 61.
 | [ ] E06 | 48 notes | Phạm vi đúng Restaurant SSR: mọi active user dùng CRUD, role mặc định viewer do server gán; không thêm RBAC/MFA/SPA JWT vào block |
 
 Bằng chứng lưu tại `restaurant/evidence/auth/` khi đã chạy. Với yêu cầu chưa chạy được phải ghi “chưa kiểm chứng” cùng prerequisite; không đánh dấu đủ bài chỉ vì tài liệu/test code đã tồn tại.
+
+## 6. Bổ sung của người dùng — reCAPTCHA v2 cho logout
+
+Phần mở rộng này không được ghi thành yêu cầu có sẵn trong slide. Module logout đã ghép vào nền login/session; vẫn cần nghiệm thu Google v2 và persistent store thật.
+
+- GET /logout/confirm hiện checkbox v2, không hủy phiên; GET /logout vẫn 404.
+- POST requireLogin → CSRF → siteverify với key v2 riêng → delete current session → clear cookie → 303 login.
+- CAPTCHA sai/dùng lại/thiếu không hủy phiên; provider/config lỗi là lỗi kỹ thuật, không bypass.
+- V2 không có action/score; hostname phải khớp cấu hình origin, Google quyết định expiry/single-use.
+- Kiểm tra fixture đã có trong tests/auth-logout.test.js và recaptcha-v2.test.js; vẫn cần login/helper thật, key thật, browser và PostgreSQL để hoàn thành S06–S09.

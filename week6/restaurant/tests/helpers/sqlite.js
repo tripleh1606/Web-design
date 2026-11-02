@@ -6,6 +6,11 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 
 async function disposableSqlite(t, { schema } = {}) {
+  const fs = require('node:fs');
+  const productionSchema = path.resolve(__dirname, '../../prisma/schema.prisma');
+  if (!/provider\s*=\s*"sqlite"/.test(fs.readFileSync(productionSchema, 'utf8'))) {
+    throw new Error('Historical SQLite fixture is incompatible with the PostgreSQL app/client. Run npm run test:register:db with a disposable PostgreSQL database instead.');
+  }
   const temporaryRoot = path.resolve(os.tmpdir());
   const directory = path.resolve(await mkdtemp(path.join(temporaryRoot, 'soucha-register-')));
   const root = path.resolve(__dirname, '../..');

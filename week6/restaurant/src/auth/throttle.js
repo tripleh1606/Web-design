@@ -1,41 +1,22 @@
-const { lockDatabaseWrite } = require('./database-lock');
-const { hashToken } = require('./session');
-const emailKey = email => hashToken(email);
-const retrySeconds = (until, now) => Math.max(1, Math.ceil((until - now) / 1000));
-
-// All callers acquire keys in sorted order. No in-memory fallback on DB failure.
-async function consumeBuckets(tx, specs, now) {
-  await lockDatabaseWrite(tx);
-  const sorted = [...specs].sort((a, b) => a.key.localeCompare(b.key));
-  let retry = 0;
-  for (const spec of sorted) {
-    let row = await tx.rateLimitBucket.findUnique({ where: { key: spec.key } });
-    if (!row || now - row.windowStartedAt >= spec.windowMs) {
-      row = await tx.rateLimitBucket.upsert({ where: { key: spec.key },
-        create: { key: spec.key, count: 0, windowStartedAt: now, nextAllowedAt: row?.nextAllowedAt ?? null },
-        update: { count: 0, windowStartedAt: now } });
-    }
-    if (row.count >= spec.max) retry = Math.max(retry, retrySeconds(new Date(row.windowStartedAt.getTime() + spec.windowMs), now));
-    if (row.nextAllowedAt > now) retry = Math.max(retry, retrySeconds(row.nextAllowedAt, now));
-    await tx.rateLimitBucket.update({ where: { key: spec.key }, data: {
-      count: { increment: 1 },
-      ...(spec.cooldownMs && !retry ? { nextAllowedAt: new Date(now.getTime() + spec.cooldownMs) } : {})
-    } });
-  }
-  return retry;
+// The caller supplies a Prisma transaction; PostgreSQL locks synchronize all app instances.
+async function lock(tx, key) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
 }
-
-async function lockActivationAttempt(tx, email, clock = () => new Date()) {
-  const key = emailKey(email);
-  // Reserve the SQLite writer before reading or creating an email budget.
-  await lockDatabaseWrite(tx);
-  let attempt = await tx.activationAttempt.upsert({ where: { emailKey: key },
-    create: { emailKey: key, attempts: 0, lockedUntil: null }, update: {} });
-  const now = clock();
-  if (attempt.lockedUntil && attempt.lockedUntil <= now) {
-    attempt = await tx.activationAttempt.update({ where: { emailKey: key }, data: { attempts: 0, lockedUntil: null } });
+async function consume(tx, { key, limit, windowMs, cooldownMs = 0, now: suppliedNow }) {
+  await lock(tx, `rate:${key}`);
+  const old = await tx.rateLimitBucket.findUnique({ where: { key } });
+  // Capture the clock after waiting for the lock; explicit clocks are for deterministic tests.
+  const now = suppliedNow === undefined ? new Date() : typeof suppliedNow === 'function' ? suppliedNow() : suppliedNow;
+  const inWindow = old && now - old.windowStartedAt < windowMs;
+  const count = inWindow ? old.count : 0;
+  const cooldownRemaining = old?.nextAllowedAt ? old.nextAllowedAt - now : 0;
+  if (count >= limit || cooldownRemaining > 0) {
+    const remaining = count >= limit ? windowMs - (now - old.windowStartedAt) : cooldownRemaining;
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil(remaining / 1000)) };
   }
-  return attempt;
+  const data = { count: count + 1, windowStartedAt: inWindow ? old.windowStartedAt : now,
+    nextAllowedAt: cooldownMs ? new Date(now.getTime() + cooldownMs) : null };
+  await tx.rateLimitBucket.upsert({ where: { key }, create: { key, ...data }, update: data });
+  return { allowed: true, retryAfter: 0 };
 }
-
-module.exports = { consumeBuckets, lockActivationAttempt, emailKey, retrySeconds };
+module.exports = { lock, consume };

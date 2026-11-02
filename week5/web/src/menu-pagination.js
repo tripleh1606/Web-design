@@ -1,6 +1,7 @@
 import { ApiError, requestDishPage } from './api.js';
 import { el, link } from './dom.js';
 import { createPageBuffer } from './page-buffer.js';
+import { createMotion } from './ui-motion.js';
 
 const VIEWS = [['pages', 'Số trang', '01'], ['more', 'Tải thêm', '02'], ['infinite', 'Cuộn liên tục', '03']];
 const FILTER_KEYS = ['q', 'mode', 'category', 'minPrice', 'maxPrice', 'available', 'sort'];
@@ -28,12 +29,13 @@ function state(kind, title, text, ...actions) {
 }
 
 export async function renderMenu(ctx, url, { navigate, renderCard }) {
+  const motion = createMotion(ctx.signal);
   document.title = 'Soucha · Thực đơn';
   const view = VIEWS.some(([key]) => key === url.searchParams.get('view')) ? url.searchParams.get('view') : 'pages';
   // Append views deliberately restart at page 1 on reload / Back / shared links.
   if (view !== 'pages' && url.searchParams.has('page')) {
     url.searchParams.delete('page');
-    history.replaceState({}, '', url.pathname + url.search);
+    history.replaceState(history.state, '', url.pathname + url.search);
   }
   const requestedSize = url.searchParams.get('pageSize')?.trim();
   let pageSize = requestedSize || '12';
@@ -44,7 +46,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     if (pageSize !== requestedSize) {
       url.searchParams.set('pageSize', pageSize);
       if (view === 'pages') url.searchParams.set('page', '1');
-      history.replaceState({}, '', url.pathname + url.search);
+      history.replaceState(history.state, '', url.pathname + url.search);
     }
   }
   const initialPage = view === 'pages' ? url.searchParams.get('page') || '1' : '1';
@@ -92,7 +94,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
       jumpInput.removeAttribute('aria-invalid');
     } });
   const jumpDialog = el('dialog', { id: 'menu-page-jump', className: 'page-jump-dialog', 'aria-labelledby': 'menu-page-jump-title',
-    onClose: () => jumpTrigger?.setAttribute('aria-expanded', 'false') });
+    onClose: () => { jumpTrigger?.setAttribute('aria-expanded', 'false'); if (jumpTrigger?.isConnected) jumpTrigger.focus({ preventScroll: true }); } });
   const closeJump = () => jumpDialog.close();
   jumpDialog.append(el('form', { noValidate: true, onSubmit: (event) => {
     event.preventDefault();
@@ -128,13 +130,10 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     el('div', { className: 'menu-filters paginated-filters' }, field('menu-category', 'Danh mục', category),
       field('menu-available', 'Trạng thái', available), field('menu-sort', 'Sắp xếp', sort),
       field('menu-minPrice', 'Giá từ (đ)', minPrice), field('menu-maxPrice', 'Đến (đ)', maxPrice)));
-  ctx.body.replaceChildren(el('section', { className: 'hero' },
-    el('div', {}, el('span', { className: 'eyebrow' }, 'COFFEE · MATCHA · HOUJICHA'),
-      el('h1', {}, 'Chậm một chút,', el('br'), el('em', {}, 'thưởng một ngụm trà.')),
-      el('p', {}, 'Từ những lá trà được chọn lọc, Soucha gửi bạn một khoảng dịu dàng trong ngày.')),
-    el('img', { src: '/logo.svg', alt: '', className: 'hero-mark' })),
+  if (ctx.reserveHeight) grid.style.minHeight = `${ctx.reserveHeight}px`;
+  ctx.body.replaceChildren(ctx.hero,
     el('section', { className: 'menu-section' },
-      el('div', { className: 'section-heading' }, el('h2', {}, 'Thực đơn nhà Soucha'), el('span', {}, 'Một lựa chọn, một chút bình yên')),
+      el('div', { className: 'section-heading' }, el('div', {}, el('span', { className: 'eyebrow' }, 'CHỌN MỘT CHÚT DỊU DÀNG'), el('h2', {}, 'Thực đơn nhà Soucha')), el('span', {}, 'Một lựa chọn, một chút bình yên')),
       form, el('div', { className: 'pagination-toolbar' }, modeNav, field('menu-pageSize', 'Mỗi lượt', sizeSelect)),
       el('p', { className: 'pagination-policy' }, view === 'pages'
         ? 'Chọn một trang để khám phá. Mở lại liên kết sẽ giữ đúng trang và bộ lọc của bạn.'
@@ -158,6 +157,7 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     if (jumpDialog.open) jumpDialog.close();
   }
   ctx.signal.addEventListener('abort', cleanup, { once: true });
+  motion.reveal(ctx.body.querySelectorAll('.section-heading'));
 
   function updateCount() {
     if (!metadata) return;
@@ -256,7 +256,9 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
         if (record.matchType === 'suggestion') card.append(el('span', { className: 'search-match-note' }, 'Gợi ý theo ký tự · khớp yếu'));
         fragment.append(card);
       }
+      const newCards = [...fragment.children];
       grid.append(fragment);
+      motion.reveal(newCards);
       end = data.items.length === 0 || data.page * data.pageSize >= data.total;
       nextPage = data.page + 1;
       if (canPrefetch && !end) pageBuffer.warm(nextPage);
@@ -275,6 +277,8 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     } finally {
       pending = false;
       if (isActive()) {
+        grid.style.removeProperty('min-height');
+        ctx.hero.start();
         grid.setAttribute('aria-busy', 'false');
         renderControls();
         if (end || failed) observer?.unobserve(sentinel);
@@ -286,6 +290,8 @@ export async function renderMenu(ctx, url, { navigate, renderCard }) {
     }
   }
   if (fulltext && !applied.q.trim()) {
+    grid.style.removeProperty('min-height');
+    ctx.hero.start();
     count.textContent = 'Nhập từ khóa để tìm toàn văn';
     message.append(state('waiting', 'Bạn muốn tìm gì?', 'Nhập một hoặc nhiều từ trong tên hoặc mô tả món rồi bấm Tìm món.'));
     return;

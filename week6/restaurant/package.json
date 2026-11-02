@@ -6,13 +6,17 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js",
-    "test:register": "node --test tests/auth-registration.test.js",
-    "test:register:db": "node --test tests/auth-registration.db.js",
     "test:live": "node tests/live-smoke.js",
+    "test:auth:postgres": "node --test tests/postgres-auth.integration.js",
     "db:generate": "prisma generate",
-    "db:push": "node scripts/prisma.js db push",
-    "db:upgrade:register": "node scripts/prisma.js db execute --file prisma/registration-upgrade.sql --schema prisma/schema.prisma",
-    "db:seed": "prisma db seed"
+    "db:push": "prisma db push",
+    "db:seed": "prisma db seed",
+    "db:seed:auth": "node prisma/seed-auth.js",
+    "db:clean:sessions": "node scripts/clean-sessions.js",
+    "db:upgrade:auth": "node scripts/upgrade-legacy-auth.js",
+    "test:register": "node --test tests/auth-registration.test.js",
+    "test:register:db": "node --test tests/postgres-auth.integration.js",
+    "db:upgrade:register": "node scripts/upgrade-legacy-auth.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

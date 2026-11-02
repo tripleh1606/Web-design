@@ -7,3 +7,5 @@ async function lockDatabaseWrite(tx) {
 }
 
 module.exports = { lockDatabaseWrite };
+// Historical SQLite branch helper. Active PostgreSQL auth uses throttle.lock
+// and shared User row locks instead; this module is not imported by app routes.

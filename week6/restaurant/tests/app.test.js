@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { createApp } = require('../src/app');
 const { servingsPossible } = require('../src/recipe');
-const { hashToken } = require('../src/auth/session');
+const { hashToken } = require('../src/auth/credentials');
 const SESSION = 'a'.repeat(64);
 const CSRF = 'b'.repeat(64);
 
@@ -113,7 +113,17 @@ function fakePrisma() {
   }
 
   const client = {
-    session: { async findUnique({ where }) { return where.tokenHash === hashToken(SESSION) ? { tokenHash: where.tokenHash, csrfToken: CSRF, expiresAt: new Date(Date.now() + 3600000), user: { id: 1, email: 'admin@example.com', status: 'active', emailVerifiedAt: new Date() } } : null; } },
+    session: {
+      async findUnique({ where }) {
+        return where.sidHash === hashToken(SESSION) ? {
+          sidHash: where.sidHash, userId: 1, csrfToken: CSRF,
+          lastSeenAt: new Date(), expiresAt: new Date(Date.now() + 3600000),
+          user: { id: 1, email: 'viewer@example.com', status: 'active', role: 'viewer', emailVerifiedAt: new Date() }
+        } : null;
+      },
+      async updateMany() { return { count: 1 }; },
+      async deleteMany() { return { count: 0 }; }
+    },
     dish: crud('dish'),
     chef: crud('chef'),
     ingredient: crud('ingredient'),
@@ -130,7 +140,7 @@ async function withApp(callback) {
     await new Promise((resolve) => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
     const request = (path, options = {}) => {
-      const headers = { connection: 'close', cookie: `soucha_session=${SESSION}`, ...options.headers };
+      const headers = { connection: 'close', cookie: `sid=${SESSION}`, ...options.headers };
       const body = options.body instanceof URLSearchParams ? new URLSearchParams(options.body) : options.body;
       if (body instanceof URLSearchParams) body.set('_csrf', CSRF);
       return fetch(base + path, { redirect: 'manual', ...options, headers, body });
@@ -153,7 +163,7 @@ test('servingsPossible uses the tightest ingredient limit', () => {
   assert.equal(servingsPossible([{ amount: 10, stock: 9 }]), 0);
 });
 
-test('SSR authenticated pages read current data; search, escaping and 404 work', async () => {
+test('authenticated SSR pages read current data; search, escaping and 404 work', async () => {
   await withApp(async ({ request, tables }) => {
     tables.dish.push({ id: 1, name: 'Matcha <b>Latte</b>', description: 'Nóng', price: 65000, category: 'matcha', image: '/beverages/matcha-latte.jpeg', available: true });
     const list = await request('/dishes');
@@ -311,11 +321,96 @@ test('database error returns a generic 500 without leaking connection details', 
   const server = createApp({ prisma: client, logger: { error() {} } }).listen(0);
   try {
     await new Promise((resolve) => server.once('listening', resolve));
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/dishes`, { headers: { cookie: `soucha_session=${SESSION}` } });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/dishes`, { headers: { cookie: `sid=${SESSION}` } });
     const html = await response.text();
     assert.equal(response.status, 500);
     assert.doesNotMatch(html, /password|postgresql:\/\//);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('all restaurant routes reject anonymous direct requests before querying or writing data', async () => {
+  await withApp(async ({ request, client }) => {
+    const touched = () => { throw new Error('CRUD must not be reached'); };
+    for (const model of ['dish', 'chef', 'ingredient', 'chefDish', 'dishIngredient']) {
+      for (const key of Object.keys(client[model])) client[model][key] = touched;
+    }
+    const paths = ['/dishes', '/dishes/1', '/admin', '/admin/dishes', '/admin/chefs', '/admin/ingredients'];
+    for (const resource of ['dishes', 'chefs', 'ingredients']) {
+      paths.push(`/admin/${resource}/new`, `/admin/${resource}/1/edit`, `/admin/${resource}/1/delete`);
+    }
+    paths.push('/admin/dishes/1/ingredients/1/edit', '/admin/dishes/1/ingredients/1/delete', '/admin/chefs/1/dishes/1/delete');
+    for (const path of paths) {
+      const response = await request(path, { headers: { cookie: '' } });
+      assert.equal(response.status, 303, path);
+      assert.equal(response.headers.get('location'), '/login', path);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+    }
+    for (const path of ['/admin/dishes', '/admin/chefs', '/admin/ingredients', '/admin/dishes/1/ingredients', '/admin/chefs/1/dishes']) {
+      for (const suffix of ['', '/1?_method=PATCH', '/1?_method=DELETE']) {
+        const response = await request(path + suffix, { ...form({}), headers: { cookie: '' } });
+        assert.equal(response.status, 303, path + suffix);
+        assert.equal(response.headers.get('location'), '/login');
+      }
+    }
+  });
+});
+
+
+test('active viewer can enter management and invalid CSRF cannot mutate resources', async () => {
+  await withApp(async ({ request, client }) => {
+    const menu = await request('/dishes');
+    assert.equal(menu.status, 200);
+    assert.match(await menu.text(), /href="\/admin\/dishes"/);
+    const login = await request('/login');
+    assert.equal(login.status, 303);
+    assert.equal(login.headers.get('location'), '/admin/dishes');
+    for (const path of ['/admin/dishes', '/admin/chefs', '/admin/ingredients', '/admin/dishes/new']) {
+      assert.equal((await request(path)).status, 200, path);
+    }
+    const unreachable = () => { throw new Error('Invalid CSRF reached a CRUD operation'); };
+    for (const model of ['dish', 'chef', 'ingredient', 'chefDish', 'dishIngredient']) {
+      for (const key of Object.keys(client[model])) client[model][key] = unreachable;
+    }
+    for (const path of ['/admin/dishes', '/admin/dishes/1?_method=PATCH', '/admin/dishes/1?_method=DELETE', '/admin/chefs/1/dishes']) {
+      for (const csrf of ['', 'wrong-token']) {
+        const response = await request(path, {
+          method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ name: 'blocked', price: '25000', _csrf: csrf }).toString()
+        });
+        assert.equal(response.status, 403, path);
+      }
+    }
+  });
+});
+
+test('pending, unverified, expired and revoked sessions cannot reach restaurant CRUD', async () => {
+  for (const state of ['pending', 'unverified', 'expired', 'revoked']) {
+    await withApp(async ({ request, client }) => {
+      const original = client.session.findUnique;
+      client.session.findUnique = async args => {
+        const session = await original(args);
+        if (!session || state === 'revoked') return null;
+        if (state === 'pending') session.user.status = 'pending';
+        if (state === 'unverified') session.user.emailVerifiedAt = null;
+        if (state === 'expired') session.expiresAt = new Date(0);
+        return session;
+      };
+      const unreachable = () => { throw new Error('Unauthenticated state reached CRUD'); };
+      for (const model of ['dish', 'chef', 'ingredient', 'chefDish', 'dishIngredient']) {
+        for (const key of Object.keys(client[model])) client[model][key] = unreachable;
+      }
+      for (const path of ['/dishes', '/dishes/1', '/admin/dishes', '/admin/chefs', '/admin/ingredients', '/admin/dishes/new', '/admin/dishes/1/edit', '/admin/dishes/1/delete']) {
+        const response = await request(path);
+        assert.equal(response.status, 303, state + ': ' + path);
+        assert.equal(response.headers.get('location'), '/login');
+      }
+      for (const path of ['/admin/dishes', '/admin/dishes/1?_method=PATCH', '/admin/dishes/1?_method=DELETE', '/admin/chefs/1/dishes']) {
+        const response = await request(path, form({ name: 'blocked', price: '25000' }));
+        assert.equal(response.status, 303, state + ': ' + path);
+        assert.equal(response.headers.get('location'), '/login');
+      }
+    });
   }
 });

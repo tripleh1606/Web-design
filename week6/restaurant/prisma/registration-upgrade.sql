@@ -1,4 +1,6 @@
 -- SQLite only: upgrade the previous auth schema (users and sessions must exist).
+-- HISTORICAL REFERENCE: week6 now uses PostgreSQL/Supabase. Do not run this SQL
+-- against the active app database. Use db:push then db:upgrade:auth after review.
 -- Back up the database first. Run once, BEFORE db:push; not for week5 CRUD-only DBs.
 -- For week5 CRUD-only DBs, use db:push on a COPY to add all auth tables.
 PRAGMA foreign_keys=ON;

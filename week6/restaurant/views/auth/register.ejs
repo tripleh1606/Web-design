@@ -1,15 +1,49 @@
-<%- include('../partials/header', { title }) %>
-<section class="admin-content"><h1>Đăng ký</h1>
-<% Object.values(errors).forEach(error => { %><p class="form-alert" role="alert"><%= error %></p><% }) %>
-<% if (error) { %><p class="auth-error-code" data-error-code="<%= error.code %>"><%= error.code %></p><% } %>
-<form method="POST" action="/register" class="form-card" data-captcha-action="register" data-captcha-site-key="<%= recaptchaSiteKey %>">
-<input type="hidden" name="_csrf" value="<%= csrfToken %>">
-<label>Email <input type="email" name="email" maxlength="254" value="<%= values.email %>" autocomplete="email" required></label>
-<label>Mật khẩu <input type="password" name="password" minlength="8" maxlength="128" autocomplete="new-password" required></label>
-<label>Xác nhận mật khẩu <input type="password" name="confirmPassword" minlength="8" maxlength="128" autocomplete="new-password" required></label>
-<input type="hidden" name="g-recaptcha-response" value="">
-<p data-captcha-error role="alert" hidden>Không thể xác minh CAPTCHA. Vui lòng tải lại trang và thử lại.</p>
-<button type="submit">Đăng ký</button>
-</form><p>Đã có mã? <a href="/activate">Kích hoạt tài khoản</a>. Đã kích hoạt? <a href="/login">Đăng nhập</a>.</p></section>
-<%- include('captcha-script', { recaptchaSiteKey }) %>
+<%- include('../partials/header', { title, authPage: true }) %>
+<section class="auth-page" aria-labelledby="register-title">
+  <div class="auth-panel">
+    <header class="auth-intro">
+      <span class="auth-eyebrow">Tài khoản Soucha</span>
+      <h1 id="register-title">Một khởi đầu mới.</h1>
+      <p>Đăng ký tài khoản để khám phá và quản lý thực đơn cùng Soucha.</p>
+    </header>
+    <% if (Object.keys(errors).length) { %>
+      <div class="form-alert auth-alert" role="alert" data-error-code="<%= code %>"><%= errors.form || 'Vui lòng kiểm tra lại thông tin bên dưới.' %></div>
+    <% } %>
+    <form method="POST" action="/register" class="auth-form" data-captcha-v2>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="register-email">Địa chỉ email</label>
+        <input id="register-email" type="email" name="email" maxlength="254" value="<%= values.email %>" placeholder="ban@example.com" autocomplete="email" autocapitalize="none" spellcheck="false" <% if (errors.email) { %>aria-invalid="true" aria-describedby="register-email-error"<% } %> required>
+        <% if (errors.email) { %><p id="register-email-error" class="field-error"><%= errors.email %></p><% } %>
+      </div>
+      <div class="field">
+        <label for="register-password">Mật khẩu</label>
+        <div class="auth-password">
+          <input id="register-password" type="password" name="password" minlength="8" maxlength="128" placeholder="Tạo mật khẩu của bạn" autocomplete="new-password" aria-describedby="register-password-hint<%= errors.password ? ' register-password-error' : '' %>" <% if (errors.password) { %>aria-invalid="true"<% } %> required>
+          <button class="auth-password-toggle" type="button" data-password-toggle aria-controls="register-password" aria-label="Hiện mật khẩu" aria-pressed="false" hidden>Hiện</button>
+        </div>
+        <small id="register-password-hint" class="field-hint">Sử dụng từ 8 đến 128 ký tự.</small>
+        <% if (errors.password) { %><p id="register-password-error" class="field-error"><%= errors.password %></p><% } %>
+      </div>
+      <div class="field">
+        <label for="register-confirm">Xác nhận mật khẩu</label>
+        <div class="auth-password">
+          <input id="register-confirm" type="password" name="confirmPassword" minlength="8" maxlength="128" placeholder="Nhập lại mật khẩu" autocomplete="new-password" <% if (errors.confirmPassword) { %>aria-invalid="true" aria-describedby="register-confirm-error"<% } %> required>
+          <button class="auth-password-toggle" type="button" data-password-toggle aria-controls="register-confirm" aria-label="Hiện mật khẩu xác nhận" aria-pressed="false" hidden>Hiện</button>
+        </div>
+        <% if (errors.confirmPassword) { %><p id="register-confirm-error" class="field-error"><%= errors.confirmPassword %></p><% } %>
+      </div>
+      <div class="auth-verification">
+        <% if (recaptchaSiteKey) { %><div class="auth-captcha"><div class="g-recaptcha" data-sitekey="<%= recaptchaSiteKey %>" data-size="normal"></div></div><% } %>
+        <p class="auth-helper" data-captcha-message role="status"><%= recaptchaSiteKey ? 'Tích ô xác minh để tiếp tục.' : 'Dịch vụ xác minh chưa được cấu hình. Vui lòng thử lại sau.' %></p>
+      </div>
+      <button class="button primary auth-submit" type="submit" <% if (!recaptchaSiteKey) { %>disabled<% } %>>Tạo tài khoản <span aria-hidden="true">↗</span></button>
+      <p class="auth-footnote">Bạn sẽ nhận mã OTP qua email để kích hoạt tài khoản.</p>
+    </form>
+    <div class="auth-switch">Đã có tài khoản? <a href="/login">Đăng nhập</a></div>
+    <a class="auth-secondary-link" href="/activate">Đã có mã OTP? Kích hoạt tài khoản</a>
+  </div>
+</section>
+<% if (recaptchaSiteKey) { %><script src="https://www.google.com/recaptcha/api.js?hl=vi" async defer></script><% } %>
+<script src="/auth.js" defer></script>
 <%- include('../partials/footer') %>

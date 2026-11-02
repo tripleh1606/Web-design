@@ -1,0 +1,79 @@
+<%- include('../partials/header', { title }) %>
+<div class="admin-content">
+  <div class="breadcrumb"><a href="/admin/dishes">Món ăn</a><span>/</span><span>Công thức</span></div>
+  <div class="admin-heading">
+    <div>
+      <h1><%= dish.name %></h1>
+    </div>
+    <div class="admin-actions">
+      <a class="edit" href="/admin/dishes/<%= dish.id %>/edit">Sửa món</a>
+      <a class="button secondary" href="/admin/dishes">Quay lại</a>
+    </div>
+  </div>
+
+  <section class="recipe-summary">
+    <div class="recipe-summary-image">
+      <% if (dish.image) { %><img src="<%= dish.image %>" alt="<%= dish.name %>"><% } else { %><span aria-hidden="true">🍵</span><% } %>
+    </div>
+    <div class="recipe-summary-copy">
+      <p class="recipe-summary-description"><%= dish.description || 'Chưa có mô tả cho món này.' %></p>
+      <p class="recipe-summary-servings">Có thể làm <strong><%= servings %></strong> phần với nguyên liệu hiện tại</p>
+    </div>
+  </section>
+
+  <section class="relation-panel">
+    <h2>Nguyên liệu trong công thức</h2>
+    <% if (recipe.length) { %>
+      <div class="relation-table-wrap">
+        <table class="relation-table">
+          <thead>
+            <tr>
+              <th>Nguyên liệu</th>
+              <th>Số lượng / phần</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% recipe.forEach((line) => { %>
+              <tr>
+                <td><%= line.ingredient.name %></td>
+                <td><%= line.amount %><%= line.ingredient.unit %></td>
+                <td><a class="edit" href="/admin/dishes/<%= dish.id %>/ingredients/<%= line.ingredientId %>/edit">Chỉnh sửa</a></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <p class="admin-count">Chưa gắn nguyên liệu nào. Số phần làm được = 0.</p>
+    <% } %>
+  </section>
+
+  <section class="relation-panel">
+    <h2>Thêm nguyên liệu</h2>
+    <% if (availableIngredients.length) { %>
+      <form class="form-card relation-form" method="POST" action="/admin/dishes/<%= dish.id %>/ingredients" novalidate>
+        <% if (Object.keys(errors).length) { %><div class="form-alert" role="alert">Vui lòng kiểm tra các trường bên dưới.</div><% } %>
+        <div class="field">
+          <label for="field-ingredientId">Nguyên liệu *</label>
+          <select id="field-ingredientId" name="ingredientId" required <%- errors.ingredientId ? 'aria-invalid="true"' : '' %>>
+            <option value="">Chọn nguyên liệu</option>
+            <% availableIngredients.forEach((item) => { %>
+              <option value="<%= item.id %>" <%= String(values.ingredientId) === String(item.id) ? 'selected' : '' %>><%= item.name %> (<%= item.unit %>)</option>
+            <% }) %>
+          </select>
+          <% if (errors.ingredientId) { %><p class="field-error"><%= errors.ingredientId %></p><% } %>
+        </div>
+        <div class="field">
+          <label for="field-amount">Lượng cần cho 1 phần *</label>
+          <input id="field-amount" name="amount" type="number" min="1" step="1" value="<%= values.amount ?? '' %>" required <%- errors.amount ? 'aria-invalid="true"' : '' %>>
+          <% if (errors.amount) { %><p class="field-error"><%= errors.amount %></p><% } %>
+        </div>
+        <div class="form-actions"><button class="button primary" type="submit">Thêm vào công thức</button></div>
+      </form>
+    <% } else { %>
+      <p class="admin-count">Mọi nguyên liệu đã được gắn, hoặc chưa có nguyên liệu nào trong kho.</p>
+    <% } %>
+  </section>
+</div>
+<%- include('../partials/footer') %>

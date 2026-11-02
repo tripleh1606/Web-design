@@ -1,0 +1,31 @@
+<%- include('../partials/header', { title }) %>
+<div class="admin-content">
+  <div class="breadcrumb">
+    <a href="/admin/dishes">Món ăn</a><span>/</span>
+    <a href="/admin/dishes/<%= dish.id %>"><%= dish.name %></a><span>/</span>
+    <span>Chỉnh sửa nguyên liệu</span>
+  </div>
+  <div class="form-layout">
+    <div>
+      <h1>Chỉnh sửa nguyên liệu</h1>
+      <p><strong><%= ingredient.name %></strong> trong công thức món <%= dish.name %>.</p>
+    </div>
+    <div>
+      <form class="form-card relation-form" method="POST" action="/admin/dishes/<%= dish.id %>/ingredients/<%= ingredient.id %>?_method=PATCH" novalidate>
+        <% if (Object.keys(errors).length) { %><div class="form-alert" role="alert">Vui lòng kiểm tra các trường bên dưới.</div><% } %>
+        <div class="field">
+          <label for="field-amount">Số lượng / phần (<%= ingredient.unit %>) *</label>
+          <input id="field-amount" name="amount" type="number" min="1" step="1" value="<%= values.amount ?? '' %>" required <%- errors.amount ? 'aria-invalid="true"' : '' %>>
+          <% if (errors.amount) { %><p class="field-error"><%= errors.amount %></p><% } %>
+        </div>
+        <div class="form-actions">
+          <button class="button primary" type="submit">Lưu số lượng</button>
+          <a class="button secondary" href="/admin/dishes/<%= dish.id %>">Hủy</a>
+        </div>
+      </form>
+      <p class="admin-count" style="margin-top:18px">Hoặc gỡ nguyên liệu khỏi công thức:</p>
+      <a class="button danger" href="/admin/dishes/<%= dish.id %>/ingredients/<%= ingredient.id %>/delete">Xóa khỏi công thức</a>
+    </div>
+  </div>
+</div>
+<%- include('../partials/footer') %>

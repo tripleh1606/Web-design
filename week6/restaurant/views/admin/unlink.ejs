@@ -1,0 +1,14 @@
+<%- include('../partials/header', { title }) %>
+<div class="admin-content">
+  <div class="breadcrumb"><a href="<%= backHref %>"><%= backLabel %></a><span>/</span><span>Xác nhận gỡ</span></div>
+  <section class="confirm-card">
+    <p class="danger-label">XÁC NHẬN THAO TÁC</p>
+    <h1><%= heading %></h1>
+    <p><%= message %></p>
+    <form method="POST" action="<%= action %>">
+      <button class="button danger" type="submit">Xác nhận gỡ</button>
+      <a class="button secondary" href="<%= cancelHref %>">Giữ lại</a>
+    </form>
+  </section>
+</div>
+<%- include('../partials/footer') %>

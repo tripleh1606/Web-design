@@ -1,0 +1,28 @@
+meta {
+  name: PATCH /api/chefs empty body ok
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("empty patch ok", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.id).to.equal(Number(bru.getEnvVar("seedChefId")));
+  });
+}

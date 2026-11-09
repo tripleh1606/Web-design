@@ -1,0 +1,22 @@
+meta {
+  name: Flow DELETE dish twice NOT_FOUND
+  type: http
+  seq: 13
+}
+
+delete {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("second delete NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

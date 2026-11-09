@@ -1,0 +1,29 @@
+meta {
+  name: PATCH /api/ingredients invalid stock
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/ingredients/{{seedIngredientId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "stock": -5
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("negative stock VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["stock"]);
+  });
+}

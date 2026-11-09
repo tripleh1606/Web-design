@@ -1,0 +1,29 @@
+meta {
+  name: POST bad JSON HTTP 400
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/dishes
+  body: text
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:text {
+  {bad
+}
+
+tests {
+  const { expectTechnical } = require("./js/contract");
+  test("400 JSON without ok envelope", function() {
+    const body = expectTechnical(res, expect, 400);
+    expect(body.message).to.be.a("string");
+    expect(res.getHeader("access-control-allow-origin")).to.equal(bru.getEnvVar("corsOrigin"));
+  });
+}

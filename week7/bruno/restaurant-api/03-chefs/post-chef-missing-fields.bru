@@ -1,0 +1,27 @@
+meta {
+  name: POST /api/chefs missing required
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/chefs
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("empty body VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["name", "specialty"]);
+  });
+}

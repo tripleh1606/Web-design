@@ -1,0 +1,26 @@
+meta {
+  name: GET /api/dishes/:id/recipe ok
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/recipe
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("recipe shape", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.have.property("dish");
+    expect(body.data).to.have.property("recipe");
+    expect(body.data).to.have.property("servings");
+    expect(body.data).to.have.property("availableIngredients");
+  });
+}

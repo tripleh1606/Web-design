@@ -1,0 +1,29 @@
+meta {
+  name: PATCH /api/dishes invalid price
+  type: http
+  seq: 10
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "price": -1
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("negative price VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["price"]);
+  });
+}

@@ -1,0 +1,37 @@
+meta {
+  name: Discover seed chef id
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/chefs
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body.ok && Array.isArray(body.data)) {
+    const an = body.data.find((c) => c.name === "Nguyễn Minh An");
+    if (an) {
+      bru.setEnvVar("seedChefId", String(an.id));
+      bru.setEnvVar("chefId", String(an.id));
+    } else if (body.data[0]) {
+      bru.setEnvVar("seedChefId", String(body.data[0].id));
+      bru.setEnvVar("chefId", String(body.data[0].id));
+    }
+  }
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("list chefs for seed discovery", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.length).to.be.above(0);
+  });
+}

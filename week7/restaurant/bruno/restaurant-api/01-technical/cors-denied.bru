@@ -1,0 +1,23 @@
+meta {
+  name: GET with wrong Origin (no ACAO)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/dishes
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: http://evil.example
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("ok response but no CORS allow-origin", function() {
+    expectOk(res, expect);
+    expect(res.getHeader("access-control-allow-origin")).to.equal(undefined);
+  });
+}

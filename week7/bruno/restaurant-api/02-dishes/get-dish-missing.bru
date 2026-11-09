@@ -1,0 +1,22 @@
+meta {
+  name: GET /api/dishes/999999 NOT_FOUND
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/dishes/999999
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing id is NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

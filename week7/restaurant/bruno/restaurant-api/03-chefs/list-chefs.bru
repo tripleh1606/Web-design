@@ -1,0 +1,23 @@
+meta {
+  name: GET /api/chefs list ok
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/chefs
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("list chefs ok", function() {
+    const body = expectOk(res, expect);
+    expect(Array.isArray(body.data)).to.equal(true);
+  });
+}

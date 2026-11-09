@@ -1,0 +1,7 @@
+api/generated/
+api/prisma/*.db*
+tests/.tmp/
+tests/results/
+.env
+node_modules/
+.npm-cache/

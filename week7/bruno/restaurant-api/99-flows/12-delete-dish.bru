@@ -1,0 +1,23 @@
+meta {
+  name: Flow DELETE test dish
+  type: http
+  seq: 12
+}
+
+delete {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("delete dish ok", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.equal(null);
+  });
+}

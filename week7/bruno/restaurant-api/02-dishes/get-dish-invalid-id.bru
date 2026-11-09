@@ -1,0 +1,23 @@
+meta {
+  name: GET /api/dishes/abc NOT_FOUND
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/dishes/abc
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("invalid id is NOT_FOUND", function() {
+    const body = expectNotFound(res, expect);
+    expect(body.error.fields).to.equal(undefined);
+  });
+}

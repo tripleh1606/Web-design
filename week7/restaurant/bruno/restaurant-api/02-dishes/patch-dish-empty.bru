@@ -1,0 +1,28 @@
+meta {
+  name: PATCH /api/dishes empty body ok
+  type: http
+  seq: 11
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("empty patch returns unchanged row", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.id).to.equal(Number(bru.getEnvVar("seedDishId")));
+  });
+}

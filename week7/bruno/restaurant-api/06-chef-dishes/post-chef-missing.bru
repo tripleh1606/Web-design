@@ -1,0 +1,29 @@
+meta {
+  name: POST assign chef NOT_FOUND
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/chefs/999999/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "dishId": 1
+  }
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing chef NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

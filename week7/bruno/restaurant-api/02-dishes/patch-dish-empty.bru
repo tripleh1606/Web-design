@@ -1,0 +1,27 @@
+meta {
+  name: PATCH /api/dishes empty body VALIDATION
+  type: http
+  seq: 11
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("empty patch needs at least one field", function() {
+    expectValidation(res, expect, ["_form"]);
+  });
+}

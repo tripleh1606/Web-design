@@ -1,0 +1,30 @@
+meta {
+  name: POST recipe amount 0 VALIDATION
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ingredientId": 1,
+    "amount": 0
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("amount 0 VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["amount"]);
+  });
+}

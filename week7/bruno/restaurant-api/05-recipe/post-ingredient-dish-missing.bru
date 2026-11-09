@@ -1,0 +1,30 @@
+meta {
+  name: POST recipe dish NOT_FOUND
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/dishes/999999/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ingredientId": 1,
+    "amount": 10
+  }
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing dish NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

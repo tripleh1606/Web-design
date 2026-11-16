@@ -105,6 +105,20 @@ test('current user and account list do not expose credential data', async () => 
   assert.equal(JSON.stringify(accounts.body).includes('unused'), false);
 });
 
+test('admin account lookup matches normalized email without exposing credentials', async () => {
+  const response = await call('admin', '/api/users?email=%20customer%40EXAMPLE.TEST%20');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.total, 1);
+  assert.deepEqual(response.body.data.items.map(user => user.id), [users.customer.id]);
+  assert.equal(JSON.stringify(response.body).includes('passwordHash'), false);
+  assert.equal((await call('admin', '/api/users?email=missing%40example.test')).body.data.total, 0);
+  assert.equal((await call('admin', '/api/users?email=invalid')).status, 400);
+  assert.equal((await call('admin', '/api/users?email=a%40example.test&email=b%40example.test')).status, 400);
+  for (const role of ['manager', 'chef', 'staff', 'customer']) {
+    assert.equal((await call(role, '/api/users?email=customer%40example.test')).status, 403);
+  }
+});
+
 test('customer and chef scopes apply to list, paging, detail and relation traversal', async () => {
   assert.deepEqual(ids(await call('customer', '/api/dishes')), [dishes[0].id]);
   const customerDish = await call('customer', `/api/dishes/${dishes[0].id}`);

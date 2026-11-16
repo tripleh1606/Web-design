@@ -31,6 +31,8 @@ curl.exe -i -H "Authorization: Bearer $token" http://localhost:3001/api/dishes
 
 Để tạo tài khoản demo đã kích hoạt trên DB test, đặt `AUTH_SEED_EMAIL` và `AUTH_SEED_PASSWORD` trong `api/.env`, rồi chạy `npm run db:seed:auth --workspace @soucha/api`. Bộ kiểm thử giao diện tài khoản chạy bằng `npm run test:auth:browser` với Google và SMTP giả lập.
 
+Quản trị viên có thể mở **Quản trị → Phân quyền**, tìm chính xác email tài khoản, chọn một trong năm vai trò và xác nhận lưu. Tab **Tài khoản** vẫn quản lý danh sách và liên kết đầu bếp. API `GET /api/users?email=...` chỉ dành cho quản trị viên, trả danh sách phân trang lọc theo email; API đổi vai trò vẫn bảo vệ quản trị viên đang hoạt động cuối cùng. Email được chuẩn hóa như khi đăng nhập (bỏ khoảng trắng và chuyển phần tên miền thành chữ thường).
+
 ## Chạy nhanh
 
 Yêu cầu Node.js 20+ và npm. Ví dụ chạy từ thư mục `week7`:

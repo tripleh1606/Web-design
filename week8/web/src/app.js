@@ -128,7 +128,8 @@ function adminTabs(resource) {
   return el('nav', { className: 'admin-tabs', 'aria-label': 'Tài nguyên quản trị' },
     Object.entries(resources).filter(([key]) => can(({ dishes: 'dish.read', chefs: 'chef.read', ingredients: 'ingredient.read' })[key]))
       .map(([key, config]) => link(`/admin/${key}`, config.label, resource === key ? 'active' : '')),
-    can('user.role.update') ? link('/admin/users', 'Tài khoản', resource === 'users' ? 'active' : '') : null);
+    can('user.role.update') ? link('/admin/users', 'Tài khoản', resource === 'users' ? 'active' : '') : null,
+    can('user.role.update') ? link('/admin/authorization', 'Phân quyền', resource === 'authorization' ? 'active' : '') : null);
 }
 function pageHeader(title, subtitle, action) {
   return el('div', { className: 'page-heading' }, el('div', {}, el('span', { className: 'eyebrow' }, 'SOUCHA / QUẢN TRỊ'), el('h1', {}, title), el('p', {}, subtitle)), action);
@@ -362,6 +363,63 @@ async function deletePage(ctx, resource, id) {
   } catch (error) { errorPanel(error, ctx, base); }
 }
 
+function authorizationPage(ctx) {
+  const email = el('input', { id: 'authorization-email', type: 'email', required: true, autocomplete: 'off' });
+  const feedback = el('p', { role: 'status', 'aria-live': 'polite' });
+  const result = el('div');
+  const search = el('button', { type: 'submit' }, 'Tìm tài khoản');
+  const form = el('form', { className: 'actions' }, el('label', { htmlFor: 'authorization-email' }, 'Email tài khoản'), email, search);
+  let sequence = 0;
+  email.addEventListener('input', () => { sequence++; search.disabled = false; result.replaceChildren(); feedback.textContent = ''; });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const current = ++sequence;
+    result.replaceChildren();
+    feedback.textContent = '';
+    search.disabled = true;
+    try {
+      const found = await request('users', { email: email.value.trim(), paginated: true, signal: ctx.signal });
+      if (ctx.signal.aborted || current !== sequence) return;
+      const user = found.items[0];
+      if (!user) { feedback.textContent = 'Không tìm thấy tài khoản với email này.'; return; }
+      const role = el('select', { 'aria-label': `Vai trò của ${user.email}` },
+        ['admin', 'manager', 'chef', 'staff', 'customer'].map((value) => el('option', { value, selected: value === user.role }, value)));
+      const save = el('button', { type: 'button' }, 'Lưu vai trò');
+      save.addEventListener('click', async () => {
+        if (role.value === user.role) { feedback.textContent = 'Vai trò không thay đổi.'; return; }
+        if (!window.confirm(`Đổi vai trò của ${user.email} thành ${role.value}?`)) return;
+        const selected = role.value;
+        role.disabled = save.disabled = search.disabled = email.disabled = true;
+        feedback.textContent = '';
+        try {
+          const updated = await request('users', { id: user.id, path: 'role', method: 'PATCH', data: { role: selected }, signal: ctx.signal });
+          if (ctx.signal.aborted) return;
+          user.role = updated.role;
+          role.value = updated.role;
+          feedback.textContent = 'Đã cập nhật vai trò.';
+          if (user.id === account.user.id) {
+            const identity = await request('auth', { path: 'me', collection: false, signal: ctx.signal });
+            if (ctx.signal.aborted) return;
+            account = { ...account, ...identity };
+            updateNavigation();
+            if (!can('user.role.update')) return renderRoute();
+          }
+        } catch (error) {
+          if (!ctx.signal.aborted) { role.value = user.role; feedback.textContent = error.message; }
+        } finally {
+          role.disabled = save.disabled = search.disabled = email.disabled = false;
+        }
+      });
+      result.replaceChildren(el('article', { className: 'admin-row' },
+        el('div', { className: 'row-copy' }, el('h2', {}, user.email), el('p', {}, `ID ${user.id} · ${user.status || ''}`)),
+        el('div', { className: 'actions' }, role, save)));
+    } catch (error) {
+      if (!ctx.signal.aborted && current === sequence) feedback.textContent = error.message;
+    } finally { if (current === sequence) search.disabled = false; }
+  });
+  ctx.body.replaceChildren(pageHeader('Phân quyền', 'Tìm tài khoản theo email và cập nhật vai trò.'), form, feedback, result);
+}
+
 async function usersPage(ctx, page = 1) {
   loading(ctx);
   try {
@@ -449,15 +507,17 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   const ingredientNew = pathname.match(/^\/admin\/dishes\/([^/]+)\/ingredients\/new$/);
   const relation = pathname.match(/^\/admin\/(dishes|chefs)\/([^/]+)\/(ingredients|dishes)\/([^/]+)\/(edit|delete)$/);
   const validRelation = relation && ((relation[1] === 'dishes' && relation[3] === 'ingredients') || (relation[1] === 'chefs' && relation[3] === 'dishes' && relation[5] === 'delete'));
-  const ctx = createContext(pathname === '/admin/users' ? 'users' : admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined), pathname === '/dishes');
+  const ctx = createContext(pathname === '/admin/users' ? 'users' : pathname === '/admin/authorization' ? 'authorization' : admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined), pathname === '/dishes');
   ctx.body.dataset.navigationReady = 'false';
   ctx.reserveHeight = sameMenu ? priorGridHeight : 0;
   const helpers = { loading, errorPanel, pageHeader, navigate };
   let job;
-  if (pathname.startsWith('/admin/') && !(pathname === '/admin/users' ? can('user.role.update') : can('dish.write'))) {
+  if (pathname.startsWith('/admin/') && !(['/admin/users', '/admin/authorization'].includes(pathname) ? can('user.role.update') : can('dish.write'))) {
     ctx.body.replaceChildren(panel('error', 'Không có quyền truy cập', 'Tài khoản hiện tại không được phép truy cập trang này.', link('/dishes', 'Về thực đơn', 'button')));
   } else if (pathname === '/admin/users') {
     job = usersPage(ctx);
+  } else if (pathname === '/admin/authorization') {
+    authorizationPage(ctx);
   } else if (authPages.has(pathname) && account.enabled !== false) {
     job = authPage(ctx, pathname, url, { account, navigate, setAccount });
   } else if (pathname === '/dishes') job = dishList(ctx, url);

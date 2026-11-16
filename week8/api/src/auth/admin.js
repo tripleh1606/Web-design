@@ -1,6 +1,7 @@
 const express = require('express');
 const { asyncRoute, ok, fail } = require('./response');
 const { ROLES, can } = require('./policy');
+const { normalizeEmail, validateEmail } = require('./credentials');
 
 const select = { id: true, email: true, role: true, status: true, chefId: true };
 async function lockIdentity(tx, provider) {
@@ -13,15 +14,18 @@ function createAdminRouter({ prisma, provider, logger }) {
   router.get('/users', asyncRoute(async (req, res) => {
     const page = req.query.page === undefined ? 1 : Number(req.query.page);
     const pageSize = req.query.pageSize === undefined ? 10 : Number(req.query.pageSize);
-    if (Object.keys(req.query).some(k => !['page', 'pageSize'].includes(k)) ||
+    const email = req.query.email === undefined ? undefined : normalizeEmail(req.query.email);
+    if (Object.keys(req.query).some(k => !['page', 'pageSize', 'email'].includes(k)) ||
+        (email !== undefined && (typeof req.query.email !== 'string' || !validateEmail(email))) ||
         !Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100 || (page - 1) * pageSize > 2147483647 ||
         (req.query.page !== undefined && (typeof req.query.page !== 'string' || !/^\d+$/.test(req.query.page))) ||
         (req.query.pageSize !== undefined && (typeof req.query.pageSize !== 'string' || !/^\d+$/.test(req.query.pageSize)))) {
       return fail(res, 400, 'VALIDATION_FAILED', 'Trang không hợp lệ.');
     }
+    const where = email === undefined ? {} : { email };
     const [items, total] = await prisma.$transaction([
-      prisma.user.findMany({ select, orderBy: { id: 'asc' }, skip: (page - 1) * pageSize, take: pageSize }),
-      prisma.user.count()
+      prisma.user.findMany({ where, select, orderBy: { id: 'asc' }, skip: (page - 1) * pageSize, take: pageSize }),
+      prisma.user.count({ where })
     ]);
     return ok(res, { items, total, page, pageSize });
   }));

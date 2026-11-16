@@ -49,7 +49,7 @@ export async function authPage(ctx, pathname, url, { account, navigate, setAccou
     if (signal.aborted) return;
     message.textContent = '';
   }
-  if (logout) card.append(el('p', {}, `Xác nhận đăng xuất khỏi tài khoản ${account.user.email}.`));
+  if (logout) card.append(el('p', {}, 'Xác nhận đăng xuất khỏi tài khoản này.'));
 
   const fields = el('fieldset', { className: 'auth-fields' });
   if (login || register || activate || forgot) fields.append(field('email', 'Email', {
@@ -68,7 +68,7 @@ export async function authPage(ctx, pathname, url, { account, navigate, setAccou
   const captchaContainer = el('div');
   const submit = el('button', { type: 'submit' }, activate ? 'Xác minh OTP' : forgot ? 'Gửi liên kết' : reset ? 'Lưu mật khẩu mới' : title);
   const links = login ? [link('/register', 'Tạo tài khoản'), link('/forgot', 'Quên mật khẩu?'), link('/activate', 'Kích hoạt tài khoản')] :
-    [link(logout ? '/admin/dishes' : '/login', logout ? 'Hủy đăng xuất' : 'Về đăng nhập')];
+    [link(logout ? '/dishes' : '/login', logout ? 'Hủy đăng xuất' : 'Về đăng nhập')];
   const resend = activate ? el('button', { type: 'button', className: 'secondary', onClick: () => submitForm('activate/resend') }, 'Gửi lại OTP') : null;
   const form = el('form', { onSubmit(event) {
     event.preventDefault();
@@ -113,14 +113,14 @@ export async function authPage(ctx, pathname, url, { account, navigate, setAccou
       const result = await authRequest(action, { method: 'POST', data, signal });
       if (signal.aborted) return;
       if (login) {
-        setAccount(result);
-        navigate('/admin/dishes', { replace: true });
+        await setAccount(result);
+        navigate('/dishes', { replace: true });
       } else if (register || action === 'activate') {
         pendingEmail = data.email;
         notice = result.notice;
         navigate(register ? '/activate' : '/login', { replace: true });
       } else if (logout || reset) {
-        setAccount({ user: null });
+        await setAccount({ user: null });
         notice = result.notice;
         navigate('/login', { replace: true });
       } else {

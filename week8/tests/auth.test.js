@@ -7,8 +7,9 @@ const { fixture } = require('./helpers');
 const { createAccessTokens } = require('../api/src/auth/access-token');
 const { createRecaptchaV2Verifier } = require('../api/src/auth/recaptcha-v2');
 
-test('access-token middleware verifies with its loaded key and has no store dependency', (t) => {
-  const accessTokens = createAccessTokens(randomBytes(32).toString('base64url'));
+test('access-token middleware verifies with its loaded key and loads the current principal', async (t) => {
+  const user = { id: 42, email: 'test@example.test', role: 'customer', status: 'active', chefId: null };
+  const accessTokens = createAccessTokens(randomBytes(32).toString('base64url'), { user: { findUnique: async () => user } });
   const token = accessTokens.issue(42);
   const req = { get: (header) => header === 'Authorization' ? 'Bearer ' + token : undefined };
   const res = { set: () => assert.fail('valid token was rejected') };
@@ -16,26 +17,28 @@ test('access-token middleware verifies with its loaded key and has no store depe
   const readFileSync = t.mock.method(fs, 'readFileSync', () => assert.fail('unexpected synchronous file read'));
   let advanced = false;
   try {
-    accessTokens.requireAccessToken(req, res, () => { advanced = true; });
+    await accessTokens.requireAccessToken(req, res, () => { advanced = true; });
   } finally {
     readFile.mock.restore();
     readFileSync.mock.restore();
   }
   assert.equal(advanced, true);
-  assert.deepEqual(req.auth, { userId: 42 });
+  assert.deepEqual(req.auth, { userId: 42, email: user.email, role: user.role, status: user.status, chefId: null });
 });
 
-test('access token is valid at 59 seconds and rejected at 60 seconds', (t) => {
+test('access token is valid at 59 seconds and rejected at 60 seconds', async (t) => {
   let now = Date.now();
   t.mock.method(Date, 'now', () => now);
-  const accessTokens = createAccessTokens(randomBytes(32).toString('base64url'));
+  const accessTokens = createAccessTokens(randomBytes(32).toString('base64url'), {
+    user: { findUnique: async () => ({ id: 42, email: 'test@example.test', role: 'customer', status: 'active', chefId: null }) }
+  });
   const token = accessTokens.issue(42);
   const req = { get: () => 'Bearer ' + token };
   const res = { set() {}, status(code) { assert.equal(code, 401); return this; }, json(body) { return body; } };
   now += 59_000;
-  assert.equal(accessTokens.requireAccessToken(req, res, () => 'accepted'), 'accepted');
+  assert.equal(await accessTokens.requireAccessToken(req, res, () => 'accepted'), 'accepted');
   now += 1_000;
-  const denied = accessTokens.requireAccessToken(req, res, () => assert.fail('Expired token accepted'));
+  const denied = await accessTokens.requireAccessToken(req, res, () => assert.fail('Expired token accepted'));
   assert.equal(denied.error.code, 'AUTH_REQUIRED');
 });
 
@@ -107,6 +110,7 @@ test('Week 7 accepts a copied bearer JWT after logout until it expires', async (
   assert.equal(code(await auth('register', { ...registration, 'g-recaptcha-response': 'provider-down' })), 'PROVIDER_UNAVAILABLE');
   assert.equal(await app.prisma.user.count(), 0);
   assert.equal((await auth('register', { ...registration, 'g-recaptcha-response': 'valid-register' })).body.ok, true);
+  assert.equal((await app.prisma.user.findUnique({ where: { email } })).role, 'customer');
   assert.equal(code(await login(password)), 'ACCOUNT_PENDING');
   const otp = await waitForMail('otp');
   assert.equal(code(await auth('activate/resend', { email })), 'RATE_LIMITED');
@@ -131,6 +135,9 @@ test('Week 7 accepts a copied bearer JWT after logout until it expires', async (
   assert.equal(claims.exp - claims.iat, 60);
   assert.equal((await request('/api/dishes')).body.ok, true);
   assert.equal((await request('/api/dishes', { name: 'Trà', price: 100 }, { headers: { Authorization: '' } })).status, 401);
+  // Registration is deliberately unprivileged; the following CRUD checks need
+  // an operator, and the existing token must observe its current database role.
+  await app.prisma.user.update({ where: { email }, data: { role: 'admin' } });
   assert.equal((await request('/api/dishes', { name: 'Trà', price: '0; DROP TABLE dishes;' })).body.error.code, 'VALIDATION_FAILED');
   const storedText = "Trà ' OR 1=1 --";
   assert.equal((await request('/api/dishes', { name: storedText, price: 100 })).body.data.name, storedText);

@@ -1,13 +1,14 @@
 const { createSecretKey, randomUUID } = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const { fail } = require('./response');
+const { ROLES } = require('./policy');
 
 const issuer = 'soucha-week7';
 const audience = 'soucha-week7-api';
 const algorithm = 'HS256';
 const lifetimeSeconds = 60;
 
-function createAccessTokens(secret) {
+function createAccessTokens(secret, prisma) {
   if (typeof secret !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(secret)) {
     throw new Error('JWT_ACCESS_SECRET must be 32 random bytes encoded as base64url.');
   }
@@ -23,7 +24,7 @@ function createAccessTokens(secret) {
     });
   }
 
-  function requireAccessToken(req, res, next) {
+  async function requireAccessToken(req, res, next) {
     const authorization = req.get('Authorization') || '';
     const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(authorization);
     let claims;
@@ -36,8 +37,18 @@ function createAccessTokens(secret) {
     }
     if (Number.isSafeInteger(claims?.exp) && typeof claims.sub === 'string' &&
         /^[1-9]\d{0,9}$/.test(claims.sub) && Number(claims.sub) <= 2147483647) {
-      req.auth = { userId: Number(claims.sub) };
-      return next();
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: Number(claims.sub) },
+          select: { id: true, email: true, role: true, status: true, chefId: true }
+        });
+        if (user && user.status === 'active' && ROLES.includes(user.role)) {
+          req.auth = { userId: user.id, email: user.email, role: user.role, status: user.status, chefId: user.chefId };
+          return next();
+        }
+      } catch (error) {
+        return next(error);
+      }
     }
     res.set('WWW-Authenticate', authorization ? 'Bearer realm="soucha-week7", error="invalid_token"' : 'Bearer realm="soucha-week7"');
     return fail(res, 401, 'AUTH_REQUIRED', 'Vui lòng đăng nhập để tiếp tục.');

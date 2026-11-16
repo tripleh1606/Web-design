@@ -14,7 +14,7 @@ async function seedAuth(prisma, env = process.env) {
   if (existing) return { created: false };
   await prisma.user.create({ data: {
     emailOriginal: original, email, passwordHash: await hashPassword(password),
-    role: 'viewer', status: 'active', emailVerifiedAt: new Date()
+    role: 'customer', status: 'active', emailVerifiedAt: new Date()
   } });
   return { created: true };
 }

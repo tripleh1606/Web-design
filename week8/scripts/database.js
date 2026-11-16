@@ -19,6 +19,8 @@ if (action === 'generate') {
   const url = process.env.DATABASE_URL;
   if (/PROJECT_REF|YOUR_PASSWORD/.test(url || '')) throw new Error('Điền DATABASE_URL thật trong api/.env trước khi kết nối Supabase.');
   const postgresql = databaseProvider(url) === 'postgresql';
+  const migration = spawnSync(process.execPath, [path.join(api, 'prisma/migrate-identity.js')], { cwd: api, stdio: 'inherit', env: process.env });
+  if (migration.status !== 0) process.exit(migration.status || 1);
   if (postgresql) runSearchSetup();
   run(['db', 'push', '--skip-generate', '--schema', schemaPath(url)]);
   if (postgresql) runSearchSetup();

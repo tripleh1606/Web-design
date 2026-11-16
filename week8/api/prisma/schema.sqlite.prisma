@@ -31,6 +31,7 @@ model Chef {
   createdAt DateTime @default(now())
 
   dishes ChefDish[]
+  user   User?
 
   @@map("chefs")
 }
@@ -79,8 +80,10 @@ model User {
   id                 Int                      @id @default(autoincrement())
   email              String                   @unique
   emailOriginal      String                   @default("")
-  role               String                   @default("viewer")
+  role               String                   @default("customer")
   status             AccountStatus            @default(pending)
+  chefId             Int?                     @unique
+  chef               Chef?                    @relation(fields: [chefId], references: [id], onDelete: SetNull)
   passwordHash       String
   emailVerifiedAt    DateTime?
   createdAt          DateTime                 @default(now())

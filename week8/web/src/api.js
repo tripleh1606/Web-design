@@ -1,7 +1,12 @@
 import { API_BASE_URL } from '/config.js';
 
 let accessToken = '';
-export function setAccessToken(value) { accessToken = value; }
+export function setAccessToken(value) {
+  accessToken = value;
+  if (value) sessionStorage.setItem('soucha-access-token', value);
+  else sessionStorage.removeItem('soucha-access-token');
+}
+export function savedAccessToken() { return sessionStorage.getItem('soucha-access-token') || ''; }
 
 export class ApiError extends Error {
   constructor(kind, message, { code, fields, status, needsCaptcha } = {}) {
@@ -38,15 +43,20 @@ export async function request(resource, { id, path, q, mode, category, sort, pag
   let body;
   try { body = await response.json(); }
   catch { throw new ApiError('technical', 'Máy chủ trả dữ liệu không phải JSON.'); }
+  if (response.status === 401 && !(resource === 'auth' && ['login', 'config'].includes(path))) {
+    window.dispatchEvent(new Event('soucha:auth-required'));
+  } else if (response.status === 403 && !(resource === 'auth' && path === 'me')) {
+    window.dispatchEvent(new Event('soucha:forbidden'));
+  }
   if (body?.ok === false && typeof body.error?.code === 'string') {
-    if (body.error.code === 'AUTH_REQUIRED') window.dispatchEvent(new Event('soucha:auth-required'));
+    
     throw new ApiError('business', body.error.message || 'Không thể thực hiện thao tác.', { ...body.error, status: response.status });
   }
   if (!response.ok) throw new ApiError('technical', `Máy chủ trả HTTP ${response.status}. Vui lòng thử lại.`, { status: response.status });
   if (!body || typeof body !== 'object' || typeof body.ok !== 'boolean') throw new ApiError('technical', 'Response không đúng hợp đồng API.');
   if (!body.ok) throw new ApiError('technical', 'Response lỗi không đúng hợp đồng API.');
   if (!Object.hasOwn(body, 'data')) throw new ApiError('technical', 'Response thiếu data.');
-  const validData = paginated ? body.error === null && body.data && Array.isArray(body.data.items) &&
+  const validData = paginated ? (body.error === null || !Object.hasOwn(body, 'error')) && body.data && Array.isArray(body.data.items) &&
     Number.isInteger(body.data.total) && body.data.total >= 0 &&
     Number.isInteger(body.data.page) && body.data.page >= 1 &&
     Number.isInteger(body.data.pageSize) && body.data.pageSize >= 1 && body.data.pageSize <= 100 &&

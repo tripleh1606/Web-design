@@ -40,7 +40,7 @@ for (const [resource, data] of Object.entries(examples)) {
     for (const id of ['abc', '0', '-1', '2147483648', '999999']) {
       for (const method of ['GET', 'PATCH', 'DELETE']) {
         result = await app.call(`${url}/${id}`, { method, ...(method === 'PATCH' ? { data: { name: 'Valid' } } : {}) });
-        assert.equal(result.status, 200);
+        assert.equal(result.status, 404);
         assert.equal(result.body.error.code, 'NOT_FOUND');
       }
     }

@@ -3,13 +3,14 @@ const { resources, parseId, validate } = require('./validation');
 const { dishInclude, chefInclude, viewRecord, recipeData, BusinessError, registerRelations } = require('./relations');
 const { parsePageQuery, dishPage } = require('./pagination');
 const { mountAuth } = require('./auth/router');
+const { requireAction, scope } = require('./authorization');
 
 const route = (handler) => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
 const success = (res, data) => res.status(200).json({ ok: true, data });
 const failure = (res, code, message, fields) => res.status(200).json({
   ok: false, error: { code, message, ...(fields ? { fields } : {}) }
 });
-const notFound = (res) => failure(res, 'NOT_FOUND', 'Bản ghi không tồn tại.');
+const notFound = (res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Bản ghi không tồn tại.' } });
 
 function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql', auth = {} }) {
   if (!prisma) throw new Error('Prisma client is required.');
@@ -36,12 +37,14 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
   });
   app.use(express.json({ limit: '32kb' }));
   // Existing CRUD/search test fixtures can isolate their API contract from auth.
-  if (auth === false) app.get('/api/auth/config', (_req, res) => success(res, { enabled: false }));
-  else mountAuth(app, { ...auth, prisma, spaOrigin, provider, logger });
+  if (auth === false) {
+    app.get('/api/auth/config', (_req, res) => success(res, { enabled: false }));
+    app.use('/api', (req, _res, next) => { req.authDisabled = true; next(); });
+  } else mountAuth(app, { ...auth, prisma, spaOrigin, provider, logger });
 
   // One server-paged API serves numbered pages, Load More and Infinite Scroll.
   // Register before /api/dishes/:id so "paged" is not mistaken for an ID.
-  app.get('/api/dishes/paged', route(async (req, res) => {
+  app.get('/api/dishes/paged', requireAction('dish.read'), route(async (req, res) => {
     const { fields, value } = parsePageQuery(req.query);
     if (Object.keys(fields).length) return res.status(200).json({
       ok: false, data: null,
@@ -50,30 +53,49 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
     if ((value.mode === 'fulltext' || (value.mode === 'smart' && value.q !== undefined)) && provider !== 'postgresql') return res.status(200).json({
       ok: false, data: null, error: { code: 'FULLTEXT_REQUIRES_POSTGRESQL', message: 'Tìm kiếm Full-text/Thông minh cần PostgreSQL/Supabase. Với SQLite, chọn Theo tên.' }
     });
-    const data = await dishPage(prisma, value);
+    const data = await dishPage(prisma, { ...value, scope: req.authDisabled ? undefined : req.auth });
     return res.status(200).json({ ok: true, data, error: null });
+  }));
+
+  app.patch('/api/dishes/:id/availability', requireAction('dish.availability.update'), route(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return notFound(res);
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) ||
+        Object.keys(req.body).length !== 1 || typeof req.body.available !== 'boolean') {
+      return failure(res, 'VALIDATION_FAILED', 'Chỉ nhận trường available kiểu boolean.');
+    }
+    const result = await prisma.dish.updateMany({ where: { id, ...scope(req, 'dishes') }, data: { available: req.body.available } });
+    if (!result.count) return notFound(res);
+    const updated = await prisma.dish.findFirst({ where: { id, ...scope(req, 'dishes') } });
+    return updated ? success(res, updated) : notFound(res);
   }));
 
   for (const [resource, config] of Object.entries(resources)) {
     const base = `/api/${resource}`;
     const model = prisma[config.model];
     const include = resource === 'dishes' ? dishInclude : resource === 'chefs' ? chefInclude : undefined;
-    app.get(base, route(async (req, res) => {
+    const action = { dishes: 'dish', chefs: 'chef', ingredients: 'ingredient' }[resource];
+    app.get(base, requireAction(`${action}.read`), route(async (req, res) => {
       const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 120) : '';
       const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 120) : '';
       const sort = req.query.sort;
-      const rows = await model.findMany({ orderBy: resource === 'dishes' && ['price-asc', 'price-desc'].includes(sort) ? { price: sort === 'price-asc' ? 'asc' : 'desc' } : { id: 'desc' } });
+      const rows = await model.findMany({ where: scope(req, resource), orderBy: resource === 'dishes' && ['price-asc', 'price-desc'].includes(sort) ? { price: sort === 'price-asc' ? 'asc' : 'desc' } : { id: 'desc' } });
       // Unicode-aware matching works consistently for both SQLite and PostgreSQL.
       const data = rows.filter((row) => (!q || row.name.toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi'))) && (resource !== 'dishes' || !category || row.category === category));
       return success(res, data);
     }));
-    app.get(`${base}/:id`, route(async (req, res) => {
+    app.get(`${base}/:id`, requireAction(`${action}.read`), route(async (req, res) => {
       const id = parseId(req.params.id);
       if (id === null) return notFound(res);
-      const record = await model.findUnique({ where: { id }, include });
-      return record ? success(res, viewRecord(resource, record)) : notFound(res);
+      const role = req.auth?.role;
+      const restrictedDish = resource === 'dishes' && !req.authDisabled && !['admin', 'manager'].includes(role);
+      const visibleInclude = restrictedDish ? (role === 'chef' ? { ingredients: dishInclude.ingredients } : undefined) : include;
+      const record = await model.findFirst({ where: { AND: [{ id }, scope(req, resource)] }, include: visibleInclude });
+      if (!record) return notFound(res);
+      if (restrictedDish && role !== 'chef') return success(res, record);
+      return success(res, viewRecord(resource, record));
     }));
-    app.post(base, route(async (req, res) => {
+    app.post(base, requireAction(`${action}.write`), route(async (req, res) => {
       const { data, fields } = validate(resource, req.body);
       if (Object.keys(fields).length) return failure(res, 'VALIDATION_FAILED', 'Dữ liệu không hợp lệ.', fields);
       const created = resource === 'dishes' && Object.hasOwn(req.body, 'ingredients') ?
@@ -83,7 +105,7 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
         }) : await model.create({ data, include });
       return success(res, viewRecord(resource, created));
     }));
-    app.patch(`${base}/:id`, route(async (req, res) => {
+    app.patch(`${base}/:id`, requireAction(`${action}.write`), route(async (req, res) => {
       const id = parseId(req.params.id);
       if (id === null) return notFound(res);
       const { data, fields } = validate(resource, req.body, true);
@@ -100,7 +122,7 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
         throw error;
       }
     }));
-    app.delete(`${base}/:id`, route(async (req, res) => {
+    app.delete(`${base}/:id`, requireAction(`${action}.write`), route(async (req, res) => {
       const id = parseId(req.params.id);
       if (id === null) return notFound(res);
       try {

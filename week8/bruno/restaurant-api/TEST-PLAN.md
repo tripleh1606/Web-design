@@ -1,4 +1,4 @@
-# Báo cáo kiểm thử API — Week 5 Bruno
+# Bruno API test report and authorization guidance
 
 **Dự án:** `Web-design/week5` (Soucha REST API + SPA)
 **Công cụ:** Bruno CLI — `npm run test:bruno`
@@ -6,11 +6,13 @@
 
 ---
 
-## 1. Kết quả tổng hợp
+## 1. Historical CRUD run
 
-| Metric | Kết quả |
-|--------|---------|
-| Status | PASS |
+The result below is the recorded Week 5 CRUD run; it is not evidence that authorization scenarios pass. The authorization matrix added for the current role policy must be exercised separately against the implemented API and role-specific test accounts.
+
+| Metric | Historical result |
+|--------|-------------------|
+| Status | PASS (CRUD/technical cases only) |
 | Requests | 67 / 67 Passed |
 | Tests | 67 / 67 |
 | Duration | ~0.1–11 s (SQLite local / network DB) |
@@ -86,14 +88,13 @@ PATCH rỗng phải fail theo validation week5 (khác bản restaurant trả ngu
 
 ---
 
-## 4. Kết luận kỳ vọng sau khi PASS
+## 4. Authorization verification status
 
-- Technical: 404 / 400 / 413 / 403 không có `ok`
-- Business thiếu/sai data: HTTP 200 + `NOT_FOUND` / `VALIDATION_FAILED`
-- Quan hệ recipe & chef–dish đúng mã; duplicate bị từ chối
-- Không còn bản ghi `bruno-contract-*` sau run
+The historical PASS above covers the Week 5 technical, validation, CRUD, and relation cases only. It does **not** cover the five-role policy, account management, Chef identity links, current-role token freshness, customer filtering, scoped Chef access, or last-admin protection. Use the direct-request cases in [TEST-MATRIX.md](TEST-MATRIX.md) after deploying the authorization changes; record new run results separately rather than treating the historical count as current authorization evidence.
 
-**Không cover trong Bruno:** HTTP 500 (mock DB) — đã có trong `npm test` (`tests/api.test.js`).
+Do not commit bearer tokens or passwords. Keep role-specific test credentials in a private Bruno environment. The test matrix calls for assertions on the persisted state after both allowed and rejected writes.
+
+**Not covered by the historical Bruno run:** HTTP 500 (mock DB), handled by `npm test` (`tests/api.test.js`).
 
 Chi tiết case: [TEST-MATRIX.md](TEST-MATRIX.md).
 Endpoint: [API-REFERENCE.md](API-REFERENCE.md).

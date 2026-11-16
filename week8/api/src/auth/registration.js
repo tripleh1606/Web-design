@@ -94,7 +94,7 @@ function createRegistrationRouter({ prisma, mailer = createSmtpMailer(), recaptc
     if (!pending && registration) {
       pending = await tx.user.create({ data: {
         email: registration.email, emailOriginal: registration.emailOriginal, passwordHash,
-        role: 'viewer', status: 'pending', emailVerifiedAt: null
+        role: 'customer', status: 'pending', emailVerifiedAt: null
       } });
     }
     if (pending?.status !== 'pending') return { allowed: true };

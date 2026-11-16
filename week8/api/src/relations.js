@@ -1,5 +1,6 @@
 const { parseId, validate } = require('./validation');
 const { servingsPossible } = require('./recipe');
+const { requireAction, scope } = require('./authorization');
 
 const dishInclude = {
   ingredients: { include: { ingredient: true }, orderBy: { ingredientId: 'asc' } },
@@ -63,19 +64,19 @@ async function recipeData(tx, lines, { single = false } = {}) {
 }
 
 function registerRelations(app, { prisma, route, success, notFound }) {
-  app.get('/api/dishes/:id/ingredients', route(async (req, res) => {
+  app.get('/api/dishes/:id/ingredients', requireAction('recipe.read'), route(async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return notFound(res);
-    const dish = await prisma.dish.findUnique({ where: { id }, include: dishInclude });
+    const dish = await prisma.dish.findFirst({ where: { AND: [{ id }, scope(req, 'dishes')] }, include: { ingredients: dishInclude.ingredients } });
     return dish ? success(res, dish.ingredients) : notFound(res);
   }));
-  app.get('/api/dishes/:id/ingredients/:ingredientId', route(async (req, res) => {
+  app.get('/api/dishes/:id/ingredients/:ingredientId', requireAction('recipe.read'), route(async (req, res) => {
     const dishId = parseId(req.params.id), ingredientId = parseId(req.params.ingredientId);
     if (dishId === null || ingredientId === null) return notFound(res);
-    const line = await prisma.dishIngredient.findUnique({ where: { dishId_ingredientId: { dishId, ingredientId } }, include: { ingredient: true, dish: true } });
+    const line = await prisma.dishIngredient.findFirst({ where: { dishId, ingredientId, dish: scope(req, 'dishes') }, include: { ingredient: true, dish: true } });
     return line ? success(res, line) : notFound(res);
   }));
-  app.post('/api/dishes/:id/ingredients', route(async (req, res) => {
+  app.post('/api/dishes/:id/ingredients', requireAction('recipe.write'), route(async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return notFound(res);
     const record = await prisma.$transaction(async (tx) => {
@@ -88,7 +89,7 @@ function registerRelations(app, { prisma, route, success, notFound }) {
     });
     return success(res, viewRecord('dishes', record));
   }));
-  app.patch('/api/dishes/:id/ingredients/:ingredientId', route(async (req, res) => {
+  app.patch('/api/dishes/:id/ingredients/:ingredientId', requireAction('recipe.write'), route(async (req, res) => {
     const dishId = parseId(req.params.id), ingredientId = parseId(req.params.ingredientId);
     if (dishId === null || ingredientId === null) return notFound(res);
     if (!positiveInt(req.body?.amount)) throw new BusinessError({ amount: 'Lượng dùng cho một phần phải là số nguyên từ 1 trở lên.' });
@@ -97,25 +98,25 @@ function registerRelations(app, { prisma, route, success, notFound }) {
     });
     return success(res, line);
   }));
-  app.delete('/api/dishes/:id/ingredients/:ingredientId', route(async (req, res) => {
+  app.delete('/api/dishes/:id/ingredients/:ingredientId', requireAction('recipe.write'), route(async (req, res) => {
     const dishId = parseId(req.params.id), ingredientId = parseId(req.params.ingredientId);
     if (dishId === null || ingredientId === null) return notFound(res);
     await prisma.dishIngredient.delete({ where: { dishId_ingredientId: { dishId, ingredientId } } });
     return success(res, null);
   }));
-  app.get('/api/chefs/:id/dishes', route(async (req, res) => {
+  app.get('/api/chefs/:id/dishes', requireAction('assignment.read'), route(async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return notFound(res);
-    const chef = await prisma.chef.findUnique({ where: { id }, include: chefInclude });
+    const chef = await prisma.chef.findFirst({ where: { AND: [{ id }, scope(req, 'chefs')] }, include: chefInclude });
     return chef ? success(res, chef.dishes) : notFound(res);
   }));
-  app.get('/api/chefs/:id/dishes/:dishId', route(async (req, res) => {
+  app.get('/api/chefs/:id/dishes/:dishId', requireAction('assignment.read'), route(async (req, res) => {
     const chefId = parseId(req.params.id), dishId = parseId(req.params.dishId);
     if (chefId === null || dishId === null) return notFound(res);
-    const row = await prisma.chefDish.findUnique({ where: { chefId_dishId: { chefId, dishId } }, include: { chef: true, dish: true } });
+    const row = await prisma.chefDish.findFirst({ where: { chefId, dishId, chef: scope(req, 'chefs') }, include: { chef: true, dish: true } });
     return row ? success(res, row) : notFound(res);
   }));
-  app.post('/api/chefs/:id/dishes', route(async (req, res) => {
+  app.post('/api/chefs/:id/dishes', requireAction('assignment.write'), route(async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return notFound(res);
     if (!positiveInt(req.body?.dishId)) throw new BusinessError({ dishId: 'Chọn một món ăn hợp lệ.' });
@@ -127,7 +128,7 @@ function registerRelations(app, { prisma, route, success, notFound }) {
     });
     return success(res, result);
   }));
-  app.delete('/api/chefs/:id/dishes/:dishId', route(async (req, res) => {
+  app.delete('/api/chefs/:id/dishes/:dishId', requireAction('assignment.write'), route(async (req, res) => {
     const chefId = parseId(req.params.id), dishId = parseId(req.params.dishId);
     if (chefId === null || dishId === null) return notFound(res);
     await prisma.chefDish.delete({ where: { chefId_dishId: { chefId, dishId } } });

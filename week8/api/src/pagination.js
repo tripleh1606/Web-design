@@ -85,6 +85,8 @@ function pageQuery(options) {
   if (options.minPrice !== undefined) conditions.push(Prisma.sql`"price" >= ${options.minPrice}`);
   if (options.maxPrice !== undefined) conditions.push(Prisma.sql`"price" <= ${options.maxPrice}`);
   if (options.available !== undefined) conditions.push(Prisma.sql`"available" = ${options.available}`);
+  if (options.scope?.role === 'customer') conditions.push(Prisma.sql`"available" = ${true}`);
+  if (options.scope?.role === 'chef') conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "chef_dishes" WHERE "chef_dishes"."dishId" = "dishes"."id" AND "chef_dishes"."chefId" = ${options.scope.chefId || 0})`);
   const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
   if (options.mode === 'smart' && options.q !== undefined) return smartPageQuery(options);
   const order = Prisma.raw(SORTS[options.sort]);
@@ -105,6 +107,8 @@ function smartPageQuery(options) {
   if (options.category !== undefined) filters.push(Prisma.sql`"category" = ${options.category}`);
   if (options.minPrice !== undefined) filters.push(Prisma.sql`"price" >= ${options.minPrice}`);
   if (options.maxPrice !== undefined) filters.push(Prisma.sql`"price" <= ${options.maxPrice}`);
+  if (options.scope?.role === 'customer') filters.push(Prisma.sql`"available" = ${true}`);
+  if (options.scope?.role === 'chef') filters.push(Prisma.sql`EXISTS (SELECT 1 FROM "chef_dishes" WHERE "chef_dishes"."dishId" = "named"."id" AND "chef_dishes"."chefId" = ${options.scope.chefId || 0})`);
   if (options.available !== undefined) filters.push(Prisma.sql`"available" = ${options.available}`);
   const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, ' AND ')}` : Prisma.empty;
   const tsquery = Prisma.sql`plainto_tsquery('simple', ${options.q})`;
@@ -124,7 +128,7 @@ function smartPageQuery(options) {
     ), "filtered" AS MATERIALIZED (
       SELECT * FROM "named" ${where}
     ), "vocabulary" AS MATERIALIZED (
-      SELECT DISTINCT unnest("__words") AS word FROM "named"
+      SELECT DISTINCT unnest("__words") AS word FROM "filtered"
     ), "term_signatures" AS MATERIALIZED (
       SELECT term, ARRAY(SELECT letter FROM regexp_split_to_table(term, '') AS letters(letter) ORDER BY letter) AS letters
       FROM "terms" WHERE length(term) BETWEEN 5 AND 12

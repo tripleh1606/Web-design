@@ -1,4 +1,4 @@
-import { request, setAccessToken } from './api.js';
+import { request, setAccessToken, savedAccessToken } from './api.js';
 import { authPage, authPages } from './auth.js';
 import { resources, money, categoryLabel, validateForm } from './resources.js';
 import { el, link, dishImage } from './dom.js';
@@ -17,36 +17,73 @@ let restoreFrame;
 let account;
 let loadingAccount = false;
 
-function setAccount({ accessToken = '', ...data }) {
-  account = { ...account, ...data };
-  setAccessToken(accessToken);
+const can = (action) => account?.capabilities?.includes(action) || account?.enabled === false;
+function updateNavigation() {
   document.getElementById('account-logout').hidden = !account.user;
   for (const item of document.querySelectorAll('.site-header nav a[href^="/dishes"], .site-header nav a[href^="/admin"]')) {
-    item.hidden = account.enabled !== false && !account.user;
+    item.hidden = !account.user || (item.pathname.startsWith('/admin') && !can('dish.write') && !can('user.role.update'));
   }
 }
+async function setAccount({ accessToken = '', ...data }) {
+  setAccessToken(accessToken);
+  account = { ...account, ...data, capabilities: [] };
+  if (accessToken) {
+    const identity = await request('auth', { path: 'me', collection: false });
+    account = { ...account, ...identity };
+  }
+  updateNavigation();
+}
 
-async function initializeAccount() {
+async function initializeAccount({ expired = false } = {}) {
   if (loadingAccount) return;
   loadingAccount = true;
   currentController?.abort();
   menuOwner?.controller.abort();
   menuOwner = undefined;
+  const token = expired ? '' : savedAccessToken();
   account = undefined;
-  setAccessToken('');
+  setAccessToken(token);
   main.replaceChildren(panel('loading', 'Đang kết nối…', 'Đang tải cấu hình tài khoản.'));
   try {
     const config = await request('auth', { path: 'config', collection: false });
-    setAccount({ ...config, user: null });
+    account = { ...config, user: null, capabilities: [] };
+    if (token) {
+      try {
+        const identity = await request('auth', { path: 'me', collection: false });
+        account = { ...account, ...identity };
+      } catch (error) {
+        if (error.status !== 401) throw error;
+        setAccessToken('');
+      }
+    }
+    updateNavigation();
     renderRoute();
   } catch (error) {
     main.replaceChildren(panel('error', 'Không thể kết nối', error.message,
-      el('button', { type: 'button', onClick: initializeAccount }, 'Thử lại')));
+      el('button', { type: 'button', onClick: () => initializeAccount() }, 'Thử lại')));
   } finally {
     loadingAccount = false;
   }
 }
-window.addEventListener('soucha:auth-required', initializeAccount);
+window.addEventListener('soucha:auth-required', () => {
+  setAccessToken('');
+  initializeAccount({ expired: true });
+});
+async function refreshIdentity() {
+  if (!account?.user || loadingAccount) return;
+  try {
+    const identity = await request('auth', { path: 'me', collection: false });
+    if (!account || (identity.user.role === account.user?.role && identity.user.chefId === account.user?.chefId &&
+      JSON.stringify(identity.capabilities) === JSON.stringify(account.capabilities))) return;
+    account = { ...account, ...identity };
+    menuOwner?.controller.abort();
+    menuOwner = undefined;
+    updateNavigation();
+    renderRoute();
+  } catch { /* The request boundary handles expired authentication. */ }
+}
+window.addEventListener('soucha:forbidden', refreshIdentity);
+window.addEventListener('focus', refreshIdentity);
 
 history.scrollRestoration = 'manual';
 function rememberScroll() {
@@ -78,8 +115,10 @@ function panel(kind, title, text, ...actions) {
 }
 function errorPanel(error, ctx, back = '/dishes') {
   if (error.name === 'AbortError' || ctx.signal.aborted) return;
-  if (error.kind === 'business' && error.code === 'NOT_FOUND') {
+  if (error.status === 404 || error.code === 'NOT_FOUND') {
     ctx.body.replaceChildren(panel('notFound', 'Không tìm thấy bản ghi', 'Bản ghi không tồn tại hoặc đã được xóa.', link(back, 'Quay lại danh sách', 'button')));
+  } else if (error.status === 403) {
+    ctx.body.replaceChildren(panel('error', 'Không có quyền truy cập', 'Tài khoản hiện tại không được phép thực hiện thao tác này.', link('/dishes', 'Về thực đơn', 'button')));
   } else {
     ctx.body.replaceChildren(panel('error', 'Không thể tải dữ liệu', error.kind === 'technical' ? error.message : 'Không thể thực hiện yêu cầu. Vui lòng thử lại.',
       el('button', { type: 'button', onClick: renderRoute }, 'Thử lại'), link(back, 'Quay lại danh sách', 'button secondary')));
@@ -87,7 +126,9 @@ function errorPanel(error, ctx, back = '/dishes') {
 }
 function adminTabs(resource) {
   return el('nav', { className: 'admin-tabs', 'aria-label': 'Tài nguyên quản trị' },
-    Object.entries(resources).map(([key, config]) => link(`/admin/${key}`, config.label, resource === key ? 'active' : '')));
+    Object.entries(resources).filter(([key]) => can(({ dishes: 'dish.read', chefs: 'chef.read', ingredients: 'ingredient.read' })[key]))
+      .map(([key, config]) => link(`/admin/${key}`, config.label, resource === key ? 'active' : '')),
+    can('user.role.update') ? link('/admin/users', 'Tài khoản', resource === 'users' ? 'active' : '') : null);
 }
 function pageHeader(title, subtitle, action) {
   return el('div', { className: 'page-heading' }, el('div', {}, el('span', { className: 'eyebrow' }, 'SOUCHA / QUẢN TRỊ'), el('h1', {}, title), el('p', {}, subtitle)), action);
@@ -137,23 +178,29 @@ async function dishDetail(ctx, id) {
     const record = await request('dishes', { id, signal: ctx.signal });
     if (ctx.signal.aborted) return;
     document.title = `Soucha · ${record.name}`;
+    const message = el('p', { className: 'field-error', role: 'alert' });
+    const availability = can('dish.availability.update') ? el('button', { type: 'button', onClick: async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        await request('dishes', { id, path: 'availability', method: 'PATCH', data: { available: !record.available }, signal: ctx.signal });
+        if (!ctx.signal.aborted) dishDetail(ctx, id);
+      } catch (error) {
+        if (!ctx.signal.aborted) errorPanel(error, ctx);
+      } finally { button.disabled = false; }
+    } }, record.available ? 'Đánh dấu tạm hết' : 'Đánh dấu đang phục vụ') : null;
     ctx.body.replaceChildren(link('/dishes', '← Quay lại thực đơn', 'back'),
       el('article', { className: 'dish-detail' }, dishImage(record, 'detail-image'),
         el('div', { className: 'detail-copy' }, el('span', { className: 'eyebrow' }, categoryLabel(record.category)),
           el('h1', {}, record.name), el('p', { className: 'detail-price' }, money(record.price)),
           el('p', { className: 'description' }, record.description || 'Chưa có mô tả cho món này.'),
-          el('p', { className: 'recipe-preview' }, `Có thể làm ${record.servings} phần với nguyên liệu hiện tại.`),
-          el('section', { className: 'public-recipe' }, el('h2', {}, 'Nguyên liệu cho một phần'),
-            record.ingredients.length ? el('ul', {}, record.ingredients.map((line) => el('li', {}, `${line.ingredient.name}: ${line.amount} ${line.ingredient.unit}`))) : el('p', { className: 'muted' }, 'Chưa có công thức.')),
-          el('dl', { className: 'facts' },
-            el('dt', {}, 'Mã món'), el('dd', {}, String(record.id)),
-            el('dt', {}, 'Tên món'), el('dd', {}, record.name),
-            el('dt', {}, 'Giá'), el('dd', {}, money(record.price)),
-            el('dt', {}, 'Danh mục'), el('dd', {}, categoryLabel(record.category)),
-            el('dt', {}, 'Phục vụ'), el('dd', {}, record.available ? 'Đang phục vụ' : 'Tạm hết'),
-            el('dt', {}, 'Đường dẫn ảnh'), el('dd', {}, record.image || 'Chưa có'),
-            el('dt', {}, 'Ngày tạo'), el('dd', {}, new Date(record.createdAt).toLocaleString('vi-VN'))),
-          el('div', { className: 'actions' }, link(`/admin/dishes/${record.id}/edit`, 'Chỉnh sửa món', 'button secondary'), link(`/admin/dishes/${record.id}`, 'Công thức & nguyên liệu', 'button secondary')))));
+          el('p', {}, record.available ? 'Đang phục vụ' : 'Tạm hết'),
+          can('recipe.read') && Array.isArray(record.ingredients) ? el('section', { className: 'public-recipe' },
+            el('h2', {}, 'Nguyên liệu cho một phần'),
+            record.ingredients.length ? el('ul', {}, record.ingredients.map((line) => el('li', {}, `${line.ingredient.name}: ${line.amount} ${line.ingredient.unit}`))) : el('p', { className: 'muted' }, 'Chưa có công thức.')) : null,
+          message, el('div', { className: 'actions' }, availability,
+            can('dish.write') ? link(`/admin/dishes/${record.id}/edit`, 'Chỉnh sửa món', 'button secondary') : null,
+            can('recipe.write') ? link(`/admin/dishes/${record.id}`, 'Công thức & nguyên liệu', 'button secondary') : null))));
   } catch (error) { errorPanel(error, ctx); }
 }
 
@@ -315,6 +362,56 @@ async function deletePage(ctx, resource, id) {
   } catch (error) { errorPanel(error, ctx, base); }
 }
 
+async function usersPage(ctx, page = 1) {
+  loading(ctx);
+  try {
+    const [result, chefs] = await Promise.all([
+      request('users', { page, pageSize: 20, paginated: true, signal: ctx.signal }),
+      request('chefs', { signal: ctx.signal })
+    ]);
+    if (ctx.signal.aborted) return;
+    const roles = ['admin', 'manager', 'chef', 'staff', 'customer'];
+    const rows = result.items.map((user) => {
+      const message = el('p', { className: 'field-error', role: 'alert' });
+      const role = el('select', { 'aria-label': `Vai trò của ${user.email}` },
+        roles.map((value) => el('option', { value, selected: value === user.role }, value)));
+      const chef = el('select', { 'aria-label': `Đầu bếp liên kết với ${user.email}`, disabled: user.role !== 'chef' },
+        el('option', { value: '', selected: user.chefId == null }, 'Không liên kết'),
+        chefs.map((value) => el('option', { value: String(value.id), selected: value.id === user.chefId }, value.name)));
+      const save = async (path, data) => {
+        role.disabled = chef.disabled = true;
+        message.textContent = '';
+        try {
+          await request('users', { id: user.id, path, method: 'PATCH', data, signal: ctx.signal });
+          if (!ctx.signal.aborted && user.id === account.user.id) {
+            const identity = await request('auth', { path: 'me', collection: false, signal: ctx.signal });
+            account = { ...account, ...identity };
+            updateNavigation();
+            if (!can('user.role.update')) return renderRoute();
+          }
+          if (!ctx.signal.aborted) usersPage(ctx, page);
+        } catch (error) {
+          if (!ctx.signal.aborted) {
+            role.value = user.role;
+            chef.value = user.chefId == null ? '' : String(user.chefId);
+            message.textContent = error.message;
+          }
+        } finally { role.disabled = false; chef.disabled = user.role !== 'chef'; }
+      };
+      role.addEventListener('change', () => save('role', { role: role.value }));
+      chef.addEventListener('change', () => save('chef', { chefId: chef.value ? Number(chef.value) : null }));
+      return el('article', { className: 'admin-row' },
+        el('div', { className: 'row-copy' }, el('h2', {}, user.email), el('p', {}, `ID ${user.id} · ${user.status || ''}`), message),
+        el('div', { className: 'actions' }, role, chef));
+    });
+    ctx.body.replaceChildren(pageHeader('Tài khoản', 'Quản lý vai trò và liên kết đầu bếp.'), el('div', { className: 'admin-list' }, rows),
+      el('div', { className: 'actions' },
+        el('button', { type: 'button', disabled: page <= 1, onClick: () => usersPage(ctx, page - 1) }, 'Trang trước'),
+        el('span', {}, `Trang ${result.page} · ${result.total} tài khoản`),
+        el('button', { type: 'button', disabled: page * result.pageSize >= result.total, onClick: () => usersPage(ctx, page + 1) }, 'Trang sau')));
+  } catch (error) { errorPanel(error, ctx); }
+}
+
 function renderRoute({ restore = false, targetY = 0 } = {}) {
   if (!account) return;
   cancelAnimationFrame(scrollFrame);
@@ -332,7 +429,7 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
       return navigate('/login', { replace: true });
     }
     if (account.user && authPages.has(pathname) && !['/logout/confirm', '/reset'].includes(pathname)) {
-      return navigate('/admin/dishes', { replace: true });
+      return navigate('/dishes', { replace: true });
     }
   }
   if (pathname === '/' || pathname === '/admin') return navigate(pathname === '/' ? '/dishes' : '/admin/dishes', { replace: true });
@@ -352,12 +449,16 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   const ingredientNew = pathname.match(/^\/admin\/dishes\/([^/]+)\/ingredients\/new$/);
   const relation = pathname.match(/^\/admin\/(dishes|chefs)\/([^/]+)\/(ingredients|dishes)\/([^/]+)\/(edit|delete)$/);
   const validRelation = relation && ((relation[1] === 'dishes' && relation[3] === 'ingredients') || (relation[1] === 'chefs' && relation[3] === 'dishes' && relation[5] === 'delete'));
-  const ctx = createContext(admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined), pathname === '/dishes');
+  const ctx = createContext(pathname === '/admin/users' ? 'users' : admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined), pathname === '/dishes');
   ctx.body.dataset.navigationReady = 'false';
   ctx.reserveHeight = sameMenu ? priorGridHeight : 0;
   const helpers = { loading, errorPanel, pageHeader, navigate };
   let job;
-  if (authPages.has(pathname) && account.enabled !== false) {
+  if (pathname.startsWith('/admin/') && !(pathname === '/admin/users' ? can('user.role.update') : can('dish.write'))) {
+    ctx.body.replaceChildren(panel('error', 'Không có quyền truy cập', 'Tài khoản hiện tại không được phép truy cập trang này.', link('/dishes', 'Về thực đơn', 'button')));
+  } else if (pathname === '/admin/users') {
+    job = usersPage(ctx);
+  } else if (authPages.has(pathname) && account.enabled !== false) {
     job = authPage(ctx, pathname, url, { account, navigate, setAccount });
   } else if (pathname === '/dishes') job = dishList(ctx, url);
   else if (/^\/dishes\/[^/]+$/.test(pathname)) job = dishDetail(ctx, pathname.split('/')[2]);

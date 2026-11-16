@@ -221,6 +221,45 @@ GET món hỗ trợ thêm `category`, `sort=price-asc|price-desc` như tuần 3.
 `ingredients` vắng mặt khi PATCH thì giữ công thức; gửi mảng thay thế toàn bộ công thức; gửi `[]` để gỡ hết liên kết. Nguyên liệu gỡ ra vẫn ở trong kho. Không chấp nhận dòng trùng, lượng không phải integer ≥ 1 hoặc id không tồn tại. Lỗi từng dòng có khóa như `ingredients.0.amount` để form hiển thị đúng vị trí.
 
 API quan hệ: GET/POST `/api/dishes/:id/ingredients`; GET/PATCH/DELETE `/api/dishes/:id/ingredients/:ingredientId`; GET/POST `/api/chefs/:id/dishes`; GET/DELETE `/api/chefs/:id/dishes/:dishId`. Đều giữ contract 200 + ok/data/error như các API chính.
+### Authorization and account roles
+
+The API uses role-based action grants with resource scopes based on the authenticated account and persisted data. Authorization is deny-by-default; hiding a link or button in the SPA is only a usability measure and does not protect an API route. A customer's dish list and detail are limited to available dishes. A chef must be linked to a Chef record and may access only dishes assigned to that Chef; recipe and ingredient reads are scoped through those assigned dishes. Managers can manage operational resources but cannot manage accounts or identity links.
+
+| Action | admin | manager | chef | staff | customer |
+| --- | --- | --- | --- | --- | --- |
+| Read dishes | All | All | Assigned | All | Available only |
+| Create/edit/delete dishes (including price) | Yes | Yes | No | No | No |
+| Change availability | Yes | Yes | Assigned only | No | No |
+| Read recipes | All | All | Assigned dishes | No | No |
+| Edit recipes | Yes | Yes | No | No | No |
+| Read ingredients/stock | All | All | Ingredients in assigned recipes | No | No |
+| Write ingredients/stock | Yes | Yes | No | No | No |
+| Read chef directory and assignments | Yes | Yes | Own only | No | No |
+| Manage chefs and assignments | Yes | Yes | No | No | No |
+| List accounts, change roles, link Chef accounts | Yes | No | No | No | No |
+
+Existing `viewer` accounts are migrated to `customer`, removing their former broad authenticated CRUD access. Review existing accounts and explicitly assign operational roles before rollout; do not infer privileges from names, email addresses, or ChefDish assignments. Canonical roles are `admin`, `manager`, `chef`, `staff`, and `customer`; account signup cannot set a role. A chef account requires a unique nullable Chef link, and an unlinked chef has no chef-scoped access. ChefDish remains a business assignment and does not establish login identity.
+
+For either PostgreSQL or SQLite upgrades, first back up the database and stop all application writers. Set `DATABASE_URL` in `api/.env`, then run `node scripts/database.js generate` followed by `node scripts/database.js push` from the repository root. The push path runs `migrate-identity` before Prisma `db push`: it maps known `viewer` roles to `customer`, refuses unknown role values without changing them, then adds the nullable unique Chef link from the Prisma schema. Resolve unknown roles explicitly before retrying. Prisma `db push` behavior depends on provider/version; review any failure with an operator and do not use `--accept-data-loss`. Restore from backup if needed.
+
+Before cutover, inventory existing viewer accounts and identify legitimate operators; mapping viewer to customer intentionally removes broad authenticated CRUD access. After the schema upgrade, activate an existing account, then run `node api/prisma/bootstrap-admin.js <email>` as a trusted operator. This promotes that existing account only when no active admin exists; it does not create credentials. Restart application writers afterward and use the admin API to assign operational roles and Chef links. Keep the backup until rollout is confirmed. Never bootstrap through public signup, a default credential, or a first-registration rule.
+
+After bearer-token signature/expiry verification, protected requests use the current database account role, status, and Chef link; inactive or missing accounts are rejected. Thus role/link changes affect the next request even when a short-lived token remains valid. Existing access tokens are not immediately revoked on logout or password change: expiry and database-backed authorization are separate controls, and this is not a token-revocation guarantee.
+
+Authenticated authorization endpoints:
+
+| Method | Path | Access / contract |
+| --- | --- | --- |
+| GET | `/api/auth/me` | Authenticated; `{ ok: true, data: { user: { id, role, chefId }, capabilities: [...] } }` |
+| GET | `/api/users?page=1&pageSize=10` | Admin only; `{ ok:true, data:{ items:[{id,email,role,status,chefId}], total, page, pageSize } }`; excludes secrets |
+| PATCH | `/api/users/:id/role` | Admin only; body `{ "role": "admin|manager|chef|staff|customer" }`; returns safe account fields |
+| PATCH | `/api/users/:id/chef` | Admin only; body `{ "chefId": 12 }` or `{ "chefId": null }`; returns safe account fields |
+| PATCH | `/api/dishes/:id/availability` | Admin/manager, or chef assigned to dish; exact body `{ "available": true }` |
+
+Capabilities are action names (`dish.read`, `dish.write`, `dish.availability.update`, `recipe.read`, `recipe.write`, `ingredient.read`, `ingredient.write`, `chef.read`, `chef.write`, `assignment.read`, `assignment.write`, `user.role.update`). They are coarse UI hints; a capability does not imply access to every resource instance. The server enforces row scopes on collection, detail, nested relation, and write routes. Treat out-of-scope resources as not found, forbidden actions as denied, and never trust role/user identifiers supplied by the browser.
+
+For authorization coverage, test each role through direct HTTP requests, not just the SPA: customer available filtering and hidden details; chef assigned/unassigned reads, relations, scoped ingredients and exact availability-only mutation; manager account-management denial; admin role/link changes and last-admin protection; invalid, inactive, and demoted users including a still-valid issued token. Verify rejected mixed availability fields do not mutate data. Bruno runner and current case inventory: [Bruno API reference](./bruno/restaurant-api/API-REFERENCE.md) and [test matrix](./bruno/restaurant-api/TEST-MATRIX.md).
+
 
 ## Kiểm tra
 

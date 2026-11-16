@@ -26,16 +26,31 @@ test('SPA MFA works end-to-end with real API and isolated database at mobile wid
   await login();
   await page.waitForURL(origin + '/dishes');
   await page.getByRole('link', { name: 'Bảo mật', exact: true }).click();
+  await page.locator('input[name=password]').fill('wrong-login-password');
+  await button('Bắt đầu thiết lập').click();
+  await page.getByText('Mật khẩu đăng nhập Soucha không đúng. Ô này không nhận mã từ ứng dụng xác thực.', { exact: true }).waitFor();
   await page.locator('input[name=password]').fill(password);
   const setupResponse = page.waitForResponse(r => r.url().endsWith('/api/auth/mfa/setup'));
   await button('Bắt đầu thiết lập').click();
-  const setup = (await (await setupResponse).json()).data;
+  let setup = (await (await setupResponse).json()).data;
   await page.locator('.mfa-qr').waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await app.prisma.mfaCredential.updateMany({ data: { pendingExpiresAt: new Date(Date.now() - 1) } });
+  await page.reload();
+  await page.getByText('Thiết lập trước đã hết hạn và chưa bật MFA.', { exact: false }).waitFor();
+  await page.getByLabel('Mật khẩu đăng nhập Soucha', { exact: true }).fill(password);
+  const newSetupResponse = page.waitForResponse(r => r.url().endsWith('/api/auth/mfa/setup'));
+  await button('Bắt đầu thiết lập').click();
+  setup = (await (await newSetupResponse).json()).data;
+  await page.locator('.mfa-qr').waitFor();
   // Reload restores the JWT but never displays the setup secret a second time.
   await page.reload();
   await page.waitForURL(origin + '/account/security');
-  await button('Xác nhận thiết lập đang chờ').waitFor();
+  await button('Bật xác thực hai lớp').waitFor();
+  assert.equal(await button('Bắt đầu thiết lập').count(), 0);
+  assert.equal(await page.getByRole('heading', { name: 'Tạo thiết lập mới', exact: true }).count(), 0);
+  assert.equal(await page.locator('input[name=password]').count(), 0);
+  await page.locator('input[name=code]').waitFor();
   assert.equal(await page.locator('.mfa-qr').count(), 0);
   assert.equal(await page.locator('.mfa-secret').count(), 0);
   // A new password login can also resume the scanned setup.
@@ -45,11 +60,11 @@ test('SPA MFA works end-to-end with real API and isolated database at mobile wid
   await login();
   await page.waitForURL(origin + '/dishes');
   await page.getByRole('link', { name: 'Bảo mật', exact: true }).click();
-  await button('Xác nhận thiết lập đang chờ').waitFor();
+  await button('Bật xác thực hai lớp').waitFor();
   assert.equal(await page.locator('.mfa-qr').count(), 0);
   assert.equal(await page.locator('.mfa-secret').count(), 0);
   await page.locator('input[name=code]').fill(totp(setup.secret, Math.floor(Date.now() / 30_000)));
-  await button('Xác nhận thiết lập đang chờ').click();
+  await button('Bật xác thực hai lớp').click();
   await page.locator('.mfa-recovery li').first().waitFor();
   const codes = await page.locator('.mfa-recovery li').allTextContents();
   assert.equal(codes.length, 8);

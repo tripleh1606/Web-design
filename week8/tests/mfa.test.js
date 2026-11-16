@@ -221,7 +221,10 @@ test('expired setup cannot enable MFA and a fresh login preserves an unexpired s
   const expiredSetup = (await other.auth('mfa/setup', { password: other.password })).body.data;
   await other.prisma.mfaCredential.update({ where: { userId: other.user.id }, data: { pendingExpiresAt: new Date(Date.now() - 1) } });
   assert.equal((await other.auth('mfa/status')).body.data.setupPending, false);
-  assert.equal((await other.auth('mfa/enable', { code: totp(expiredSetup.secret, Math.floor(Date.now() / 30_000)) })).status, 400);
+  assert.equal((await other.auth('mfa/status')).body.data.setupExpired, true);
+  const expiredResponse = await other.auth('mfa/enable', { code: totp(expiredSetup.secret, Math.floor(Date.now() / 30_000)) });
+  assert.equal(expiredResponse.status, 400);
+  assert.equal(expiredResponse.body.error.code, 'MFA_SETUP_EXPIRED');
   assert.equal((await other.prisma.mfaCredential.findFirst()).enabled, false);
   assert.equal(await other.prisma.mfaRecoveryCode.count(), 0);
 });

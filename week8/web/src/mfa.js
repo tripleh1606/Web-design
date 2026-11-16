@@ -35,7 +35,7 @@ function field(name, label, props = {}) {
   return el('div', { className: 'field' }, el('label', { htmlFor: name }, label),
     el('input', { id: name, name, required: true, ...props }));
 }
-const passwordField = () => field('password', 'Mật khẩu hiện tại', { type: 'password', autocomplete: 'current-password', maxLength: 128 });
+const passwordField = () => field('password', 'Mật khẩu đăng nhập Soucha', { type: 'password', autocomplete: 'current-password', maxLength: 128 });
 const codeField = (recovery = false) => field('code', recovery ? 'Mã xác thực hoặc mã khôi phục' : 'Mã 6 chữ số từ ứng dụng xác thực', {
   type: 'text', autocomplete: 'one-time-code', maxLength: recovery ? 80 : 6,
   ...(recovery ? {} : { inputMode: 'numeric', pattern: '[0-9]{6}' })
@@ -108,6 +108,7 @@ export async function securityPage(ctx, { setAccount }) {
   let enabled = false;
   let recoveryRemaining = 0;
   let setupExpiresAt = 0;
+  let setupExpired = false;
   const returnButton = () => el('button', { type: 'button', className: 'secondary', onClick: renderStatus }, 'Đóng và về bảo mật');
   const showRecovery = (codes) => {
     content.replaceChildren(el('h2', {}, 'Lưu mã khôi phục ngay'),
@@ -120,17 +121,18 @@ export async function securityPage(ctx, { setAccount }) {
     if (!enabled) {
       const remaining = Math.max(0, Math.ceil((setupExpiresAt - Date.now()) / 1000));
       if (remaining > 0) {
-        content.append(el('h2', {}, 'Tiếp tục thiết lập đang chờ'),
-          el('p', {}, `Thiết lập đang chờ còn khoảng ${remaining} giây tại lúc mở trang. Nhập mã từ tài khoản bạn đã quét trong ứng dụng xác thực để hoàn tất. Khóa và QR cũ không hiển thị lại.`),
-          actionForm(ctx, 'Xác nhận thiết lập đang chờ', [codeField()], enableSetup),
-          el('h2', {}, 'Tạo thiết lập mới'),
-          el('p', {}, 'Nếu chưa lưu tài khoản trong ứng dụng, bạn có thể bắt đầu lại bên dưới. Thiết lập mới sẽ thay thế khóa và QR đang chờ; bạn phải quét QR mới.'));
+        content.append(el('h2', {}, 'Bật xác thực hai lớp'),
+          el('p', {}, `Bạn đã bắt đầu thiết lập. Nhập mã 6 chữ số từ ứng dụng xác thực rồi bấm nút bên dưới để bật. Thiết lập còn khoảng ${remaining} giây tại lúc mở trang.`),
+          actionForm(ctx, 'Bật xác thực hai lớp', [codeField()], enableSetup));
+        return;
       }
-      content.append(el('p', {}, 'Dùng ứng dụng như Google Authenticator để thêm lớp bảo vệ cho tài khoản.'),
+      content.append(...(setupExpired ? [el('p', { className: 'auth-message', role: 'status' }, 'Thiết lập trước đã hết hạn và chưa bật MFA. Mã từ QR cũ không còn dùng được; hãy tạo QR mới và quét lại.')] : []),
+        el('p', {}, 'Bước 1: nhập mật khẩu bạn dùng để đăng nhập Soucha để tạo mã QR. Bước 2: quét QR trong ứng dụng xác thực, rồi nhập mã 6 chữ số để bật MFA.'),
         actionForm(ctx, 'Bắt đầu thiết lập', [passwordField()], async (data) => {
           const setup = await mfaRequest('setup', { method: 'POST', data, signal: ctx.signal });
           if (ctx.signal.aborted) return;
           setupExpiresAt = Date.now() + (setup.expiresIn ?? 600) * 1000;
+          setupExpired = false;
           showSetup(setup);
         }));
     } else {
@@ -155,7 +157,11 @@ export async function securityPage(ctx, { setAccount }) {
     }
   }
   async function enableSetup(data) {
-    if (Date.now() >= setupExpiresAt) throw new Error('Thiết lập đã hết hạn. Hãy đóng và bắt đầu lại.');
+    if (Date.now() >= setupExpiresAt) {
+      setupExpired = true;
+      renderStatus();
+      return;
+    }
     const result = await mfaRequest('enable', { method: 'POST', data, signal: ctx.signal });
     if (ctx.signal.aborted) return;
     enabled = true;
@@ -170,7 +176,7 @@ export async function securityPage(ctx, { setAccount }) {
       el('p', {}, 'Quét mã QR hoặc nhập khóa bên dưới. Thiết lập có hiệu lực trong 10 phút và chỉ bật sau khi bạn xác nhận mã 6 chữ số. Phiên đăng nhập có thể hết hạn sớm hơn; hãy đăng nhập lại, mở Bảo mật và xác nhận thiết lập đang chờ bằng mã từ tài khoản đã quét.'),
       /^data:image\/png;base64,/.test(setup.qrCodeDataUrl) ? el('img', { className: 'mfa-qr', src: setup.qrCodeDataUrl, alt: 'Mã QR thiết lập ứng dụng xác thực' }) : null,
       el('p', {}, 'Khóa thiết lập (giữ bí mật):'), el('code', { className: 'mfa-secret' }, setup.secret),
-      actionForm(ctx, 'Xác nhận và bật', [codeField()], enableSetup), returnButton());
+      actionForm(ctx, 'Bật xác thực hai lớp', [codeField()], enableSetup), returnButton());
   }
   content.append(el('p', { role: 'status' }, 'Đang tải trạng thái bảo mật…'));
   try {
@@ -183,6 +189,7 @@ export async function securityPage(ctx, { setAccount }) {
     enabled = status.enabled;
     recoveryRemaining = status.recoveryRemaining;
     setupExpiresAt = status.setupPending ? Date.now() + Math.max(0, status.setupExpiresIn || 0) * 1000 : 0;
+    setupExpired = Boolean(status.setupExpired);
     renderStatus();
   } catch (error) {
     if (ctx.signal.aborted) return;

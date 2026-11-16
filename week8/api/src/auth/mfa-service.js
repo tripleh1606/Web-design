@@ -19,12 +19,12 @@ function createMfaService({ prisma, throttle, accessTokens, encryptionKey }) {
   async function ensure(tx, userId) {
     return tx.mfaCredential.upsert({ where: { userId }, create: { userId }, update: {} });
   }
-  async function failure(tx, credential, now) {
+  async function failure(tx, credential, now, problem = invalid()) {
     const failedCount = (credential.lockedUntil && credential.lockedUntil <= now ? 0 : credential.failedCount) + 1;
     const state = await tx.mfaCredential.update({ where: { userId: credential.userId }, data: {
       failedCount, lockedUntil: failedCount >= MAX_FAILURES ? new Date(+now + LOCK_MS) : null
     } });
-    return locked(state, now) || invalid();
+    return locked(state, now) || problem;
   }
   async function acceptCode(tx, credential, code, now, { pending = false } = {}) {
     const cipher = pending ? credential.pendingCipher : credential.secretCipher;
@@ -101,6 +101,7 @@ function createMfaService({ prisma, throttle, accessTokens, encryptionKey }) {
       if (!authorized(credential, claims)) return { error: { status: 401, code: 'AUTH_REQUIRED', message: 'Vui lòng đăng nhập lại để tiếp tục.' } };
       if (action === 'status') return { data: { enabled: credential?.enabled || false, configured: Boolean(vault),
         setupPending: !credential?.enabled && Boolean(credential?.pendingCipher) && credential.pendingExpiresAt > now,
+        setupExpired: !credential?.enabled && Boolean(credential?.pendingCipher) && credential.pendingExpiresAt <= now,
         setupExpiresIn: credential?.pendingExpiresAt > now ? Math.ceil((credential.pendingExpiresAt - now) / 1000) : 0,
         recoveryRemaining: await tx.mfaRecoveryCode.count({ where: { userId, usedAt: null } }) } };
       credential = await ensure(tx, userId);
@@ -108,7 +109,8 @@ function createMfaService({ prisma, throttle, accessTokens, encryptionKey }) {
       if (lock) return { error: lock };
       if (!vault) return { error: unavailable() };
       if (action !== 'enable') {
-        if (typeof password !== 'string' || password.length > 128 || !await verifyPassword(password, user.passwordHash)) return { error: await failure(tx, credential, now) };
+        if (typeof password !== 'string' || password.length > 128 || !await verifyPassword(password, user.passwordHash)) return { error: await failure(tx, credential, now,
+          { status: 400, code: 'INVALID_PASSWORD', message: 'Mật khẩu đăng nhập Soucha không đúng. Ô này không nhận mã từ ứng dụng xác thực.' }) };
       }
       if (action === 'setup') {
         if (credential.enabled) return { error: { status: 409, code: 'MFA_ALREADY_ENABLED', message: 'Xác thực hai bước đã bật. Hãy tắt thiết bị cũ trước khi thiết lập lại.' } };
@@ -119,6 +121,9 @@ function createMfaService({ prisma, throttle, accessTokens, encryptionKey }) {
         return { data: { secret, otpauthUri, expiresIn: SETUP_MS / 1000 } };
       }
       if (action === 'enable') {
+        if (!credential.enabled && credential.pendingCipher && credential.pendingExpiresAt <= now) return { error: {
+          status: 400, code: 'MFA_SETUP_EXPIRED', message: 'Thiết lập MFA đã hết hạn. Hãy tạo QR mới, quét lại trong ứng dụng xác thực rồi nhập mã 6 chữ số mới.'
+        } };
         if (credential.enabled || !credential.pendingCipher || credential.pendingExpiresAt <= now) return { error: invalid() };
         const accepted = await acceptCode(tx, credential, code, now, { pending: true });
         if (accepted.error) return accepted;

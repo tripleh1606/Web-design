@@ -1,12 +1,14 @@
-# Week 7 — Soucha: tài khoản trên REST API + SPA
+# Week 8 — Soucha: MFA trên REST API + SPA
 
-Ứng dụng Week 7 chạy từ hai workspace `api/` và `web/`. Bản `restaurant/` là ứng dụng tham khảo cũ. Week 7 kế thừa tìm kiếm và phân trang của Week 5, đồng thời chuyển luồng tài khoản của Week 6 sang API JSON và giao diện CSR.
+MFA TOTP đã tích hợp vào SPA theo lựa chọn của nhóm. Xem [cài đặt, sử dụng và nghiệm thu MFA](./docs/MFA.md). Chạy `npm run db:generate --workspace @soucha/api` rồi `npm run setup:mfa` trước khi dùng phiên bản này với PostgreSQL hiện có. Phần dưới là hướng dẫn nền tảng API/SPA kế thừa Week 7.
+
+Ứng dụng Week 8 chạy từ hai workspace `api/` và `web/`. Bản `restaurant/` là ứng dụng tham khảo cũ. Nền tảng kế thừa tìm kiếm, phân trang và luồng tài khoản API JSON + CSR của các tuần trước.
 
 ## Tài khoản và reCAPTCHA v2
 
 1. Cấu hình `JWT_ACCESS_SECRET` trong `api/.env`. Để dùng đăng ký và OTP, cấu hình SMTP và cặp `RECAPTCHA_V2_SITE_KEY` / `RECAPTCHA_V2_SECRET_KEY`. Cặp Google phải thuộc loại **reCAPTCHA v2 Checkbox** và cho phép hostname của `SPA_ORIGIN`. Nếu chưa đặt cặp này, Week 7 vẫn nhận cặp biến `LOGOUT_RECAPTCHA_V2_SITE_KEY` / `LOGOUT_RECAPTCHA_V2_SECRET_KEY` cũ của Week 6 cho đăng ký và đăng nhập.
 2. Dùng `npm run setup` cho cơ sở dữ liệu mới hoặc SQLite cục bộ. Với PostgreSQL đã có dữ liệu, xem [hướng dẫn SQL](./api/sql/README.md) để chọn đúng bước bổ sung bảng tài khoản. Nếu dùng chính cơ sở dữ liệu đã có schema tài khoản Week 6, Week 7 đọc các tài khoản đó trực tiếp.
-3. Chạy `npm run dev` từ thư mục `week7`, mở <http://localhost:5173/login> và chọn **Tạo tài khoản**. Mã OTP đến qua SMTP. Checkbox bắt buộc khi đăng ký và hiện sau lần đăng nhập sai thứ ba. Link quên mật khẩu trỏ về SPA và dùng một lần.
+3. Chạy `npm run dev` từ thư mục `week8`, mở <http://localhost:5173/login> và chọn **Tạo tài khoản**. Mã OTP đến qua SMTP. Checkbox bắt buộc khi đăng ký và hiện sau lần đăng nhập sai thứ ba. Link quên mật khẩu trỏ về SPA và dùng một lần.
 
 Tạo secret riêng cho bản demo và lưu kết quả vào `JWT_ACCESS_SECRET` trong `api/.env`:
 
@@ -14,7 +16,7 @@ Tạo secret riêng cho bản demo và lưu kết quả vào `JWT_ACCESS_SECRET`
 node -p "require('node:crypto').randomBytes(32).toString('base64url')"
 ```
 
-`POST /api/auth/login` trả `data.accessToken` có hạn **60 giây**. SPA giữ JWT trong bộ nhớ và gửi `Authorization: Bearer <accessToken>` khi gọi API thực đơn, quản trị và đăng xuất. Khi token hết hạn hoặc tải lại trang, người dùng phải đăng nhập lại. API xác minh HS256 và thời hạn bằng secret đã nạp khi khởi động, không đọc file hay tra cơ sở dữ liệu trong bước xác minh. Đăng ký và xác minh OTP chưa cấp access token.
+`POST /api/auth/login` trả `data.accessToken` có hạn **60 giây** khi tài khoản chưa bật MFA; tài khoản đã bật chỉ nhận challenge rồi dùng `POST /api/auth/mfa` để lấy JWT. SPA giữ JWT trong bộ nhớ và gửi `Authorization: Bearer <accessToken>` khi gọi API. Khi token hết hạn hoặc tải lại trang, người dùng phải đăng nhập lại. API xác minh HS256 bằng secret đã nạp, sau đó kiểm tra trạng thái và phiên bản MFA trong database để chặn token cũ. Đăng ký và xác minh OTP chưa cấp access token.
 
 ### Demo phát lại JWT sau đăng xuất
 
@@ -27,18 +29,19 @@ $token = Read-Host "Dán access token demo"
 curl.exe -i -H "Authorization: Bearer $token" http://localhost:3001/api/dishes
 ```
 
-Đăng xuất và đổi mật khẩu không thu hồi JWT đã sao chép trước khi hết hạn. JWT từ bản cũ thiếu `exp` bị từ chối.
+Đăng xuất vẫn bỏ JWT ở client. Đổi mật khẩu hoặc bật/tắt MFA làm tăng phiên bản xác thực và thu hồi JWT cũ ngay. JWT Week 7 bị từ chối vì issuer/audience riêng của Week 8.
 
 Để tạo tài khoản demo đã kích hoạt trên DB test, đặt `AUTH_SEED_EMAIL` và `AUTH_SEED_PASSWORD` trong `api/.env`, rồi chạy `npm run db:seed:auth --workspace @soucha/api`. Bộ kiểm thử giao diện tài khoản chạy bằng `npm run test:auth:browser` với Google và SMTP giả lập.
 
 ## Chạy nhanh
 
-Yêu cầu Node.js 20+ và npm. Ví dụ chạy từ thư mục `week7`:
+Yêu cầu Node.js 20+ và npm. Ví dụ chạy từ thư mục `week8`:
 
 ```powershell
-cd week7
+cd week8
 npm install
 npm run setup # DB mới hoặc SQLite cục bộ
+npm run setup:mfa # PostgreSQL: thêm bảng MFA; không cần bước này cho SQLite đã db:push
 npm run dev
 ```
 

@@ -170,8 +170,8 @@ test('Week 7 accepts a copied bearer JWT after logout until it expires', async (
   const resetData = { token, password: newPassword, confirmPassword: newPassword };
   assert.equal((await auth('reset', resetData)).body.ok, true);
   assert.equal(await waitForMail('changed'), email);
-  // Reset changes the password but cannot revoke a stateless JWT in this exercise.
-  assert.equal((await request('/api/dishes', undefined, { headers: { Authorization: 'Bearer ' + copiedToken } })).status, 200);
+  // Week 8 checks the persisted MFA/auth version, so reset revokes old JWTs.
+  assert.equal((await request('/api/dishes', undefined, { headers: { Authorization: 'Bearer ' + copiedToken } })).status, 401);
   assert.equal(code(await auth('reset', resetData)), 'INVALID_RESET');
   assert.equal(code(await login(password)), 'INVALID_CREDENTIALS');
   assert.equal((await login(newPassword)).body.ok, true);

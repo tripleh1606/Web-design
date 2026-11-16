@@ -30,6 +30,9 @@ test('SQL executes in PostgreSQL and preserves UTF-8, existing stock, relations 
     await db.exec(read('../api/sql/001-schema.sql'));
     await db.exec(read('../api/sql/002-seed.sql'));
     await db.exec(read('../api/sql/003-auth.sql'));
+    await db.exec(read('../api/sql/004-mfa.sql'));
+    await db.exec(read('../api/sql/004-mfa.sql')); // The additive MFA setup is idempotent.
+    assert.equal((await db.query("SELECT count(*)::int AS total FROM information_schema.tables WHERE table_name IN ('mfa_credentials','mfa_challenges','mfa_recovery_codes')")).rows[0].total, 3);
     for (const [table, expected] of [['dishes', 8], ['chefs', 2], ['ingredients', 3], ['dish_ingredients', 6], ['chef_dishes', 4]]) {
       assert.equal((await db.query(`SELECT count(*)::int AS total FROM ${table}`)).rows[0].total, expected, table);
     }

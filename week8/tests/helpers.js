@@ -7,7 +7,7 @@ const { createPrisma } = require('../api/src/database');
 const { createApp } = require('../api/src/app');
 
 async function fixture({ auth = false } = {}) {
-  const authOptions = auth === false ? false : { jwtSecret: randomBytes(32).toString('base64url'), ...auth };
+  const authOptions = auth === false ? false : { jwtSecret: randomBytes(32).toString('base64url'), mfaEncryptionKey: randomBytes(32).toString('base64url'), ...auth };
   const tmp = path.join(__dirname, '.tmp');
   fs.mkdirSync(tmp, { recursive: true });
   const folder = fs.mkdtempSync(path.join(tmp, 'run-'));

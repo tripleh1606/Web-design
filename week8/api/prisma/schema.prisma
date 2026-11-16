@@ -94,6 +94,9 @@ model User {
   verificationTokens EmailVerificationToken[]
   activationChallenge ActivationChallenge?
   passwordResets     PasswordReset[]
+  mfaCredential      MfaCredential?
+  mfaChallenges      MfaChallenge[]
+  mfaRecoveryCodes   MfaRecoveryCode[]
   @@map("users")
 }
 
@@ -188,4 +191,39 @@ model PasswordResetLimit {
   windowStart DateTime @default(now())
 
   @@map("password_reset_limits")
+}
+
+model MfaCredential {
+  userId           Int       @id
+  enabled          Boolean   @default(false)
+  secretCipher     String?
+  pendingCipher    String?
+  pendingExpiresAt DateTime?
+  lastStep         Int?
+  authVersion      Int       @default(0)
+  failedCount      Int       @default(0)
+  lockedUntil      DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("mfa_credentials")
+}
+
+model MfaChallenge {
+  tokenHash   String    @id
+  userId      Int
+  authVersion Int
+  expiresAt   DateTime
+  usedAt      DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("mfa_challenges")
+}
+
+model MfaRecoveryCode {
+  codeHash String    @id
+  userId   Int
+  usedAt   DateTime?
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@map("mfa_recovery_codes")
 }

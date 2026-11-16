@@ -2,8 +2,8 @@ const { createSecretKey, randomUUID } = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const { fail } = require('./response');
 
-const issuer = 'soucha-week7';
-const audience = 'soucha-week7-api';
+const issuer = 'soucha-week8';
+const audience = 'soucha-week8-api';
 const algorithm = 'HS256';
 const lifetimeSeconds = 60;
 
@@ -17,8 +17,8 @@ function createAccessTokens(secret) {
   }
   const key = createSecretKey(bytes);
 
-  function issue(userId) {
-    return jwt.sign({}, key, {
+  function issue(userId, { mfaVerified = false, authVersion = 0 } = {}) {
+    return jwt.sign({ mfa: mfaVerified, av: authVersion }, key, {
       algorithm, issuer, audience, subject: String(userId), jwtid: randomUUID(), expiresIn: lifetimeSeconds
     });
   }
@@ -37,9 +37,10 @@ function createAccessTokens(secret) {
     if (Number.isSafeInteger(claims?.exp) && typeof claims.sub === 'string' &&
         /^[1-9]\d{0,9}$/.test(claims.sub) && Number(claims.sub) <= 2147483647) {
       req.auth = { userId: Number(claims.sub) };
+      req.accessClaims = claims;
       return next();
     }
-    res.set('WWW-Authenticate', authorization ? 'Bearer realm="soucha-week7", error="invalid_token"' : 'Bearer realm="soucha-week7"');
+    res.set('WWW-Authenticate', authorization ? 'Bearer realm="soucha-week8", error="invalid_token"' : 'Bearer realm="soucha-week8"');
     return fail(res, 401, 'AUTH_REQUIRED', 'Vui lòng đăng nhập để tiếp tục.');
   }
 

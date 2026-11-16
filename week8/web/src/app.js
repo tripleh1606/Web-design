@@ -1,5 +1,6 @@
 import { request, setAccessToken } from './api.js';
 import { authPage, authPages } from './auth.js';
+import { mfaPage, securityPage, clearPendingChallenge } from './mfa.js';
 import { resources, money, categoryLabel, validateForm } from './resources.js';
 import { el, link, dishImage } from './dom.js';
 import { createRecipeEditor } from './recipe-editor.js';
@@ -21,6 +22,7 @@ function setAccount({ accessToken = '', ...data }) {
   account = { ...account, ...data };
   setAccessToken(accessToken);
   document.getElementById('account-logout').hidden = !account.user;
+  document.getElementById('account-security').hidden = !account.user;
   for (const item of document.querySelectorAll('.site-header nav a[href^="/dishes"], .site-header nav a[href^="/admin"]')) {
     item.hidden = account.enabled !== false && !account.user;
   }
@@ -327,6 +329,8 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   currentController?.abort();
   const url = new URL(location.href);
   const pathname = url.pathname.replace(/\/$/, '') || '/';
+  if (pathname !== '/mfa') clearPendingChallenge();
+  if (pathname === '/account/security' && !account.user) return navigate('/login', { replace: true });
   if (account.enabled !== false) {
     if (!account.user && (!authPages.has(pathname) || pathname === '/logout/confirm')) {
       return navigate('/login', { replace: true });
@@ -345,8 +349,8 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   routeUrl = url;
   restoringScroll = true;
   document.querySelectorAll('.site-header nav a').forEach((anchor) => anchor.setAttribute('aria-current',
-    (anchor.pathname === '/logout/confirm' ? pathname === anchor.pathname :
-      !authPages.has(pathname) && pathname.startsWith('/admin') === anchor.pathname.startsWith('/admin')) ? 'page' : 'false'));
+    (['/logout/confirm', '/account/security'].includes(anchor.pathname) ? pathname === anchor.pathname :
+      pathname !== '/account/security' && !authPages.has(pathname) && pathname.startsWith('/admin') === anchor.pathname.startsWith('/admin')) ? 'page' : 'false'));
   const admin = pathname.match(/^\/admin\/(dishes|chefs|ingredients)(?:\/(new)|\/([^/]+)\/(edit|delete))?$/);
   const detail = admin ? null : pathname.match(/^\/admin\/(dishes|chefs)\/([^/]+)$/);
   const ingredientNew = pathname.match(/^\/admin\/dishes\/([^/]+)\/ingredients\/new$/);
@@ -357,7 +361,11 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   ctx.reserveHeight = sameMenu ? priorGridHeight : 0;
   const helpers = { loading, errorPanel, pageHeader, navigate };
   let job;
-  if (authPages.has(pathname) && account.enabled !== false) {
+  if (pathname === '/mfa') {
+    job = mfaPage(ctx, { navigate, setAccount });
+  } else if (pathname === '/account/security') {
+    job = securityPage(ctx, { navigate, setAccount });
+  } else if (authPages.has(pathname) && account.enabled !== false) {
     job = authPage(ctx, pathname, url, { account, navigate, setAccount });
   } else if (pathname === '/dishes') job = dishList(ctx, url);
   else if (/^\/dishes\/[^/]+$/.test(pathname)) job = dishDetail(ctx, pathname.split('/')[2]);

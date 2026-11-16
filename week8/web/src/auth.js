@@ -1,8 +1,9 @@
 import { request } from './api.js';
 import { el, link } from './dom.js';
 import { createCaptcha } from './recaptcha.js';
+import { setPendingChallenge, takeMfaNotice } from './mfa.js';
 
-export const authPages = new Set(['/login', '/register', '/activate', '/forgot', '/reset', '/logout/confirm']);
+export const authPages = new Set(['/login', '/register', '/activate', '/forgot', '/reset', '/mfa', '/logout/confirm']);
 const titles = {
   '/login': 'Đăng nhập', '/register': 'Đăng ký', '/activate': 'Kích hoạt tài khoản',
   '/forgot': 'Quên mật khẩu', '/reset': 'Đặt lại mật khẩu', '/logout/confirm': 'Đăng xuất'
@@ -30,7 +31,7 @@ export async function authPage(ctx, pathname, url, { account, navigate, setAccou
   const resetToken = reset ? url.searchParams.get('token') || '' : '';
   document.title = `Soucha · ${title}`;
 
-  const message = el('p', { role: 'status', className: 'auth-message' }, notice);
+  const message = el('p', { role: 'status', className: 'auth-message' }, notice || takeMfaNotice());
   notice = '';
   const errorMessage = el('p', { role: 'alert', className: 'field-error' });
   const card = el('section', { className: 'auth-card' },
@@ -112,7 +113,10 @@ export async function authPage(ctx, pathname, url, { account, navigate, setAccou
     try {
       const result = await authRequest(action, { method: 'POST', data, signal });
       if (signal.aborted) return;
-      if (login) {
+      if (login && result.next === 'mfa') {
+        setPendingChallenge(result);
+        navigate('/mfa', { replace: true });
+      } else if (login) {
         setAccount(result);
         navigate('/admin/dishes', { replace: true });
       } else if (register || action === 'activate') {

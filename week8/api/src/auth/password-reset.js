@@ -97,6 +97,10 @@ function createPasswordResetRouter({ prisma, mailer, authConfig, throttle, logge
       });
       if (claim.count !== 1) return { invalid: true };
       await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+      // Reset does not remove the second factor; revoke old JWTs and pending logins.
+      await tx.mfaCredential.upsert({ where: { userId: user.id }, create: { userId: user.id, authVersion: 1 },
+        update: { authVersion: { increment: 1 }, pendingCipher: null, pendingExpiresAt: null } });
+      await tx.mfaChallenge.deleteMany({ where: { userId: user.id } });
       await tx.passwordReset.updateMany({
         where: { userId: user.id, id: { not: record.id }, usedAt: null, invalidatedAt: null },
         data: { invalidatedAt: now }

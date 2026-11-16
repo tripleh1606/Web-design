@@ -173,7 +173,8 @@ test('SPA enforces current roles and dish state, retains tokens on 403 and clear
   assert.equal(await page.evaluate(() => sessionStorage.getItem('soucha-access-token')), null);
   await login(chefUser.email);
   await page.goto(origin + '/admin/dishes');
-  await page.getByRole('heading', { name: 'Không có quyền truy cập', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Món ăn', exact: true }).waitFor();
+  assert.equal(await page.getByRole('link', { name: '+ Thêm món ăn', exact: true }).count(), 0);
   await page.goto(origin + '/dishes/' + dish.id);
   const availability = page.getByRole('button', { name: 'Đánh dấu tạm hết', exact: true });
   await availability.waitFor();

@@ -13,6 +13,7 @@
     "test": "node --test --test-concurrency=2 tests/authorization.test.js tests/mfa.test.js tests/auth.test.js tests/api.test.js tests/web.test.js tests/relations.test.js tests/database.test.js tests/beverages.test.js tests/pagination.test.js tests/chef-roster.test.js tests/search-setup.test.js tests/page-buffer.test.js tests/fulltext.test.js",
     "test:browser": "node tests/browser.js",
     "test:auth:browser": "node --test tests/auth-browser.js",
+    "test:chef:browser": "node --test tests/chef-navigation-browser.js",
     "test:mfa": "node --test --test-concurrency=1 tests/mfa.test.js",
     "test:mfa:browser": "node --test tests/mfa-browser.js",
     "setup:mfa": "node scripts/setup-mfa.js",
@@ -22,6 +23,7 @@
     "test:fulltext:browser": "node tests/fulltext-browser.js",
     "test:bruno": "cd bruno/restaurant-api && bru run -r --env local",
     "db:sql": "node scripts/export-sql.js",
+    "db:status-setup": "node scripts/setup-dish-status.js",
     "db:search-setup": "node scripts/setup-search.js",
     "db:seed:beverages": "node scripts/seed-beverages.js",
     "db:seed:chefs": "node scripts/seed-chefs.js"

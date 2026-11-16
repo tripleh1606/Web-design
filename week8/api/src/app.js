@@ -66,7 +66,7 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
     }
     const editable = req.auth?.role === 'chef' ? { status: 'draft' } : {};
     // The write rechecks both the assignment/current account and dish state in SQL.
-    const result = await prisma.dish.updateMany({ where: { id, ...scope(req, 'dishes'), ...editable }, data: { available: req.body.available } });
+    const result = await prisma.dish.updateMany({ where: { id, ...scope(req, 'dishes', { assignedOnly: true }), ...editable }, data: { available: req.body.available } });
     if (!result.count) {
       if (!await prisma.dish.findUnique({ where: { id }, select: { id: true } })) return notFound(res);
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Không có quyền cập nhật món này.' } });
@@ -98,7 +98,13 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
       const record = await model.findFirst({ where: { AND: [{ id }, scope(req, resource)] }, include: visibleInclude });
       if (!record) return notFound(res);
       if (restrictedDish && role !== 'chef') return success(res, record);
-      return success(res, viewRecord(resource, record));
+      const visible = viewRecord(resource, record);
+      if (resource === 'dishes' && role === 'chef') {
+        visible.canUpdateAvailability = record.status === 'draft' && Boolean(await prisma.dish.findFirst({
+          where: { id, ...scope(req, 'dishes', { assignedOnly: true }) }, select: { id: true }
+        }));
+      }
+      return success(res, visible);
     }));
     app.post(base, requireAction(`${action}.write`), route(async (req, res) => {
       const { data, fields } = validate(resource, req.body);

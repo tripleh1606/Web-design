@@ -86,7 +86,6 @@ function pageQuery(options) {
   if (options.maxPrice !== undefined) conditions.push(Prisma.sql`"price" <= ${options.maxPrice}`);
   if (options.available !== undefined) conditions.push(Prisma.sql`"available" = ${options.available}`);
   if (options.scope?.role === 'customer') conditions.push(Prisma.sql`"available" = ${true}`);
-  if (options.scope?.role === 'chef') conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "chef_dishes" WHERE "chef_dishes"."dishId" = "dishes"."id" AND "chef_dishes"."chefId" = ${options.scope.chefId || 0})`);
   const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
   if (options.mode === 'smart' && options.q !== undefined) return smartPageQuery(options);
   const order = Prisma.raw(SORTS[options.sort]);
@@ -105,7 +104,6 @@ function pageQuery(options) {
 function smartPageQuery(options) {
   const visibility = [];
   if (options.scope?.role === 'customer') visibility.push(Prisma.sql`"available" = ${true}`);
-  if (options.scope?.role === 'chef') visibility.push(Prisma.sql`EXISTS (SELECT 1 FROM "chef_dishes" WHERE "chef_dishes"."dishId" = "dishes"."id" AND "chef_dishes"."chefId" = ${options.scope.chefId || 0})`);
   const visibleWhere = visibility.length ? Prisma.sql`WHERE ${Prisma.join(visibility, ' AND ')}` : Prisma.empty;
   const filters = [];
   if (options.category !== undefined) filters.push(Prisma.sql`"category" = ${options.category}`);

@@ -228,19 +228,20 @@ GET món hỗ trợ thêm `category`, `sort=price-asc|price-desc` như tuần 3.
 API quan hệ: GET/POST `/api/dishes/:id/ingredients`; GET/PATCH/DELETE `/api/dishes/:id/ingredients/:ingredientId`; GET/POST `/api/chefs/:id/dishes`; GET/DELETE `/api/chefs/:id/dishes/:dishId`. Đều giữ contract 200 + ok/data/error như các API chính.
 ### Authorization and account roles
 
-The API uses role-based action grants with resource scopes based on the authenticated account and persisted data. Authorization is deny-by-default; hiding a link or button in the SPA is only a usability measure and does not protect an API route. A customer's dish list and detail are limited to available dishes. A chef must be linked to a Chef record and may access only dishes assigned to that Chef; recipe and ingredient reads are scoped through those assigned dishes. Managers can manage operational resources but cannot manage accounts or identity links.
+The API uses role-based action grants with resource scopes based on the authenticated account and persisted data. Authorization is deny-by-default; hiding a link or button in the SPA is only a usability measure and does not protect an API route. A customer's dish list and detail are limited to available dishes. Chefs can browse the full menu and recipes, including before their account is linked to a Chef profile. A linked chef can add existing dishes to, or remove them from, their own cooking list. These actions change only ChefDish links; they do not create or delete menu dishes. Ingredient inventory lists remain scoped to assigned recipes. Managers can manage operational resources but cannot manage accounts or identity links.
 
 | Action | admin | manager | chef | staff | customer |
 | --- | --- | --- | --- | --- | --- |
-| Read dishes | All | All | Assigned | All | Available only |
+| Read dishes | All | All | All | All | Available only |
 | Create/edit/delete dishes (including price) | Yes | Yes | No | No | No |
 | Change availability | Yes | Yes | Assigned draft dishes only | No | No |
-| Read recipes | All | All | Assigned dishes | No | No |
+| Read recipes | All | All | All | No | No |
 | Edit recipes | Yes | Yes | No | No | No |
 | Read ingredients/stock | All | All | Ingredients in assigned recipes | No | No |
 | Write ingredients/stock | Yes | Yes | No | No | No |
 | Read chef directory and assignments | Yes | Yes | Own only | No | No |
-| Manage chefs and assignments | Yes | Yes | No | No | No |
+| Edit chef profiles or other chefs' assignments | Yes | Yes | No | No | No |
+| Add/remove existing dishes in own cooking list | Yes | Yes | Linked profile only | No | No |
 | List accounts, change roles, link Chef accounts | Yes | No | No | No | No |
 
 Existing `viewer` accounts are migrated to `customer`, removing their former broad authenticated CRUD access. Review existing accounts and explicitly assign operational roles before rollout; do not infer privileges from names, email addresses, or ChefDish assignments. Canonical roles are `admin`, `manager`, `chef`, `staff`, and `customer`; account signup cannot set a role. A chef account requires a unique nullable Chef link, and an unlinked chef has no chef-scoped access. ChefDish remains a business assignment and does not establish login identity.
@@ -263,9 +264,13 @@ Authenticated authorization endpoints:
 | PATCH | `/api/users/:id/chef` | Admin only; body `{ "chefId": 12 }` or `{ "chefId": null }`; returns safe account fields |
 | PATCH | `/api/dishes/:id/availability` | Admin/manager, or chef assigned to a draft dish; exact body `{ "available": true }` |
 
-Capabilities are action names (`dish.read`, `dish.write`, `dish.availability.update`, `recipe.read`, `recipe.write`, `ingredient.read`, `ingredient.write`, `chef.read`, `chef.write`, `assignment.read`, `assignment.write`, `user.role.update`). They are coarse UI hints; a capability does not imply access to every resource instance. The server enforces row scopes on collection, detail, nested relation, and write routes. Treat out-of-scope resources as not found, forbidden actions as denied, and never trust role/user identifiers supplied by the browser.
+Khi admin gán role `chef`, API tự tạo và liên kết hồ sơ nếu tài khoản chưa có `chefId`, trong cùng transaction. Tên mặc định lấy từ phần trước `@` của email, chuyên môn mặc định là “Chế biến món ăn”; admin có thể sửa hồ sơ sau đó. Gán lại `chef` cho tài khoản đã liên kết giữ nguyên hồ sơ. Với tài khoản chef cũ chưa có hồ sơ, admin tìm email trong trang Phân quyền rồi bấm “Lưu vai trò” để bổ sung liên kết.
 
-For authorization coverage, test each role through direct HTTP requests, not just the SPA: customer available filtering and hidden details; chef assigned/unassigned reads, relations, scoped ingredients and exact availability-only mutation; manager account-management denial; admin role/link changes and last-admin protection; invalid, inactive, and demoted users including a still-valid issued token. Verify rejected mixed availability fields do not mutate data. Bruno runner and current case inventory: [Bruno API reference](./bruno/restaurant-api/API-REFERENCE.md) and [test matrix](./bruno/restaurant-api/TEST-MATRIX.md).
+Capabilities are action names (`dish.read`, `dish.write`, `dish.availability.update`, `recipe.read`, `recipe.write`, `ingredient.read`, `ingredient.write`, `chef.read`, `chef.write`, `assignment.read`, `assignment.write`, `assignment.self.write`, `user.role.update`). They are coarse UI hints; a capability does not imply access to every resource instance. `assignment.self.write` permits only POST/DELETE links for the authenticated account's linked Chef profile; the server rejects a different profile ID or attempts to supply chefId/role in the POST body. The server enforces row scopes on collection, detail, nested relation, and write routes. Treat out-of-scope resources as not found, forbidden actions as denied, and never trust role/user identifiers supplied by the browser.
+
+Đầu bếp mở tab **Đầu bếp** sẽ vào thẳng **Món tôi có thể chế biến**, dùng **+ Thêm món có thể chế biến** và ô **Tìm món trong thực đơn** để chọn món có sẵn. Món đã thêm không xuất hiện trong danh sách chọn. **Gỡ khỏi danh sách** mở bước xác nhận và chỉ xóa liên kết với đầu bếp. Nếu tài khoản chưa liên kết hồ sơ, trang hướng dẫn nhờ admin tạo và liên kết tại trang Tài khoản; đầu bếp vẫn xem được thực đơn. Chạy `npm run test:chef:browser` để kiểm tra luồng này bằng database riêng. Với Supabase cũ chưa có `dishes.status`, chạy `npm run db:status-setup`; migration có thể chạy lại và không thay thế món hay phân công hiện có.
+
+For authorization coverage, test each role through direct HTTP requests, not just the SPA: customer available filtering and hidden details; chef full-menu reads, own assignment add/remove, cross-profile denial, scoped inventory and exact availability-only mutation; manager account-management denial; admin role/link changes and last-admin protection; invalid, inactive, and demoted users including a still-valid issued token. Verify rejected mixed availability fields do not mutate data. Bruno runner and current case inventory: [Bruno API reference](./bruno/restaurant-api/API-REFERENCE.md) and [test matrix](./bruno/restaurant-api/TEST-MATRIX.md).
 
 
 ## Kiểm tra

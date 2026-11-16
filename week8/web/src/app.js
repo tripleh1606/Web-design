@@ -19,11 +19,18 @@ let account;
 let loadingAccount = false;
 
 const can = (action) => account?.capabilities?.includes(action) || account?.enabled === false;
+const resourceActions = { dishes: 'dish', chefs: 'chef', ingredients: 'ingredient' };
+const canManageAssignment = (chefId) => can('assignment.write') || (can('assignment.self.write') && account.user?.chefId === Number(chefId));
+const canOpenWorkspace = () => can('chef.read') || can('ingredient.read') || can('dish.write') || can('user.role.update');
 function updateNavigation() {
   document.getElementById('account-logout').hidden = !account.user;
   document.getElementById('account-security').hidden = !account.user;
   for (const item of document.querySelectorAll('.site-header nav a[href^="/dishes"], .site-header nav a[href^="/admin"]')) {
-    item.hidden = account.enabled !== false && (!account.user || (item.pathname.startsWith('/admin') && !can('dish.write') && !can('user.role.update')));
+    item.hidden = account.enabled !== false && (!account.user || (item.pathname.startsWith('/admin') && !canOpenWorkspace()));
+    if (item.pathname.startsWith('/admin')) {
+      item.textContent = account.user?.role === 'chef' ? 'Đầu bếp' : 'Quản trị';
+      item.setAttribute('href', account.user?.role === 'chef' ? '/admin/chefs' : '/admin/dishes');
+    }
   }
 }
 async function setAccount({ accessToken = '', ...data }) {
@@ -182,7 +189,7 @@ async function dishDetail(ctx, id) {
     if (ctx.signal.aborted) return;
     document.title = `Soucha · ${record.name}`;
     const message = el('p', { className: 'field-error', role: 'alert' });
-    const availability = can('dish.availability.update') && (account.user?.role !== 'chef' || record.status === 'draft') ? el('button', { type: 'button', onClick: async (event) => {
+    const availability = can('dish.availability.update') && (account.user?.role !== 'chef' || record.canUpdateAvailability === true) ? el('button', { type: 'button', onClick: async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
       try {
@@ -203,20 +210,29 @@ async function dishDetail(ctx, id) {
             record.ingredients.length ? el('ul', {}, record.ingredients.map((line) => el('li', {}, `${line.ingredient.name}: ${line.amount} ${line.ingredient.unit}`))) : el('p', { className: 'muted' }, 'Chưa có công thức.')) : null,
           message, el('div', { className: 'actions' }, availability,
             can('dish.write') ? link(`/admin/dishes/${record.id}/edit`, 'Chỉnh sửa món', 'button secondary') : null,
-            can('recipe.write') ? link(`/admin/dishes/${record.id}`, 'Công thức & nguyên liệu', 'button secondary') : null))));
+            can('recipe.read') ? link(`/admin/dishes/${record.id}`, 'Công thức & nguyên liệu', 'button secondary') : null))));
   } catch (error) { errorPanel(error, ctx); }
 }
 
 async function adminList(ctx, resource) {
   const config = resources[resource];
   const base = `/admin/${resource}`;
+  if (resource === 'chefs' && account.user?.role === 'chef' && !account.user.chefId) {
+    document.title = 'Soucha · Món tôi có thể chế biến';
+    ctx.body.replaceChildren(pageHeader('Món tôi có thể chế biến', 'Danh sách món gắn với hồ sơ đầu bếp của bạn.'),
+      panel('empty', 'Chưa liên kết hồ sơ đầu bếp', 'Nhờ quản trị viên tạo hồ sơ đầu bếp và liên kết với tài khoản của bạn. Sau khi liên kết, bạn có thể thêm hoặc gỡ món tại đây.',
+        link('/dishes', 'Xem thực đơn', 'button secondary')));
+    return;
+  }
   document.title = `Soucha · Quản trị ${config.singular}`;
   loading(ctx);
   try {
     const rows = await request(resource, { signal: ctx.signal });
     if (ctx.signal.aborted) return;
-    const heading = pageHeader(config.label, `${rows.length} bản ghi · Quản lý thông tin tại đây`, link(`${base}/new`, `+ Thêm ${config.singular}`, 'button'));
-    if (!rows.length) return ctx.body.replaceChildren(heading, panel('empty', 'Danh sách đang trống', `Bắt đầu bằng cách thêm ${config.singular} đầu tiên.`));
+    const writable = can(`${resourceActions[resource]}.write`);
+    const heading = pageHeader(config.label, `${rows.length} bản ghi`, writable ? link(`${base}/new`, `+ Thêm ${config.singular}`, 'button') : null);
+    if (!rows.length) return ctx.body.replaceChildren(heading, panel('empty', 'Danh sách đang trống',
+      account.user?.role === 'chef' ? 'Chưa có dữ liệu được phân công. Liên hệ quản trị viên để kiểm tra liên kết tài khoản đầu bếp và phân công món.' : `Chưa có ${config.singular} trong danh sách.`));
     ctx.body.replaceChildren(heading, el('div', { className: 'admin-list' }, rows.map((row) => {
       const detail = resource === 'dishes' ? `${categoryLabel(row.category)} · ${money(row.price)} · ${row.available ? 'Đang phục vụ' : 'Tạm hết'}` :
         resource === 'chefs' ? row.specialty : `${row.stock} ${row.unit}`;
@@ -225,7 +241,7 @@ async function adminList(ctx, resource) {
         el('div', { className: 'row-copy' }, el('h2', {}, resource === 'ingredients' ? row.name : link(`${base}/${row.id}`, row.name)), el('p', {}, detail), el('small', {}, `ID ${row.id}`)),
         el('div', { className: 'actions' }, ...(resource === 'dishes' ? [link(`/dishes/${row.id}`, 'Xem', 'button secondary')] : []),
           ...(resource !== 'ingredients' ? [link(`${base}/${row.id}`, resource === 'dishes' ? 'Công thức' : 'Món phụ trách', 'button secondary')] : []),
-          link(`${base}/${row.id}/edit`, 'Sửa', 'button secondary'), link(`${base}/${row.id}/delete`, 'Xóa', 'button danger-outline')));
+          ...(writable ? [link(`${base}/${row.id}/edit`, 'Sửa', 'button secondary'), link(`${base}/${row.id}/delete`, 'Xóa', 'button danger-outline')] : [])));
     })));
   } catch (error) { errorPanel(error, ctx, base); }
 }
@@ -388,7 +404,7 @@ function authorizationPage(ctx) {
         ['admin', 'manager', 'chef', 'staff', 'customer'].map((value) => el('option', { value, selected: value === user.role }, value)));
       const save = el('button', { type: 'button' }, 'Lưu vai trò');
       save.addEventListener('click', async () => {
-        if (role.value === user.role) { feedback.textContent = 'Vai trò không thay đổi.'; return; }
+        if (role.value === user.role && !(role.value === 'chef' && !user.chefId)) { feedback.textContent = 'Vai trò không thay đổi.'; return; }
         if (!window.confirm(`Đổi vai trò của ${user.email} thành ${role.value}?`)) return;
         const selected = role.value;
         role.disabled = save.disabled = search.disabled = email.disabled = true;
@@ -397,8 +413,9 @@ function authorizationPage(ctx) {
           const updated = await request('users', { id: user.id, path: 'role', method: 'PATCH', data: { role: selected }, signal: ctx.signal });
           if (ctx.signal.aborted) return;
           user.role = updated.role;
+          user.chefId = updated.chefId;
           role.value = updated.role;
-          feedback.textContent = 'Đã cập nhật vai trò.';
+          feedback.textContent = updated.role === 'chef' ? 'Đã cập nhật vai trò và liên kết hồ sơ đầu bếp.' : 'Đã cập nhật vai trò.';
           if (user.id === account.user.id) {
             const identity = await request('auth', { path: 'me', collection: false, signal: ctx.signal });
             if (ctx.signal.aborted) return;
@@ -495,6 +512,9 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
     }
   }
   if (pathname === '/' || pathname === '/admin') return navigate(pathname === '/' ? '/dishes' : '/admin/dishes', { replace: true });
+  if (pathname === '/admin/chefs' && account.user?.role === 'chef' && account.user.chefId) {
+    return navigate(`/admin/chefs/${account.user.chefId}`, { replace: true });
+  }
   const sameMenu = pathname === '/dishes' && routeUrl?.pathname === '/dishes' && Boolean(menuOwner);
   const changedPage = sameMenu && Number(url.searchParams.get('page') || 1) !== Number(routeUrl.searchParams.get('page') || 1)
     && ['q', 'mode', 'category', 'sort', 'available', 'minPrice', 'maxPrice', 'view'].every((key) => {
@@ -514,13 +534,19 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   const ctx = createContext(pathname === '/admin/users' ? 'users' : pathname === '/admin/authorization' ? 'authorization' : admin?.[1] || detail?.[1] || (ingredientNew ? 'dishes' : validRelation ? relation[1] : undefined), pathname === '/dishes');
   ctx.body.dataset.navigationReady = 'false';
   ctx.reserveHeight = sameMenu ? priorGridHeight : 0;
-  const helpers = { loading, errorPanel, pageHeader, navigate };
+  const helpers = { loading, errorPanel, pageHeader, navigate, can, canManageAssignment,
+    ownChefId: account.user?.role === 'chef' ? account.user.chefId : null };
+  const requiredAction = ['/admin/users', '/admin/authorization'].includes(pathname) ? 'user.role.update'
+    : ingredientNew || (validRelation && relation[1] === 'dishes') ? 'recipe.write'
+      : validRelation ? (canManageAssignment(relation[2]) ? 'assignment.read' : 'assignment.write')
+        : detail ? (detail[1] === 'dishes' ? 'recipe.read' : 'chef.read')
+          : admin ? `${resourceActions[admin[1]]}.${admin[2] || admin[4] ? 'write' : 'read'}` : null;
   let job;
   if (pathname === '/mfa') {
     job = mfaPage(ctx, { navigate, setAccount });
   } else if (pathname === '/account/security') {
     job = securityPage(ctx, { navigate, setAccount });
-  } else if (pathname.startsWith('/admin/') && !(['/admin/users', '/admin/authorization'].includes(pathname) ? can('user.role.update') : can('dish.write'))) {
+  } else if (pathname.startsWith('/admin/') && (!canOpenWorkspace() || (requiredAction && !can(requiredAction)))) {
     ctx.body.replaceChildren(panel('error', 'Không có quyền truy cập', 'Tài khoản hiện tại không được phép truy cập trang này.', link('/dishes', 'Về thực đơn', 'button')));
   } else if (pathname === '/admin/users') {
     job = usersPage(ctx);

@@ -8,6 +8,11 @@ async function lockIdentity(tx, provider) {
   if (provider === 'postgresql') await tx.$queryRaw`SELECT pg_advisory_xact_lock(73427821)::text`;
   else await tx.$executeRaw`UPDATE users SET role = role WHERE 1 = 0`;
 }
+async function ensureChefProfile(tx, user) {
+  if (user.chefId != null) return user.chefId;
+  const chef = await tx.chef.create({ data: { name: user.email.split('@')[0], specialty: 'Chế biến món ăn' } });
+  return chef.id;
+}
 function createAdminRouter({ prisma, provider, logger }) {
   const router = express.Router();
   router.use('/users', (req, res, next) => can(req.auth.role, 'user.role.update') ? next() : fail(res, 403, 'FORBIDDEN', 'Bạn không có quyền thực hiện thao tác này.'));
@@ -54,7 +59,9 @@ function createAdminRouter({ prisma, provider, logger }) {
           if (old.role !== 'chef') return { invalidLink: true };
           if (!await tx.chef.findUnique({ where: { id: body.chefId }, select: { id: true } })) return { invalidLink: true };
         }
-        const data = operation === 'role' ? { role: body.role, ...(body.role !== 'chef' ? { chefId: null } : {}) } : { chefId: body.chefId };
+        const data = operation === 'role'
+          ? { role: body.role, chefId: body.role === 'chef' ? await ensureChefProfile(tx, old) : null }
+          : { chefId: body.chefId };
         const user = await tx.user.update({ where: { id }, data, select });
         return { user, old };
       });
@@ -71,4 +78,4 @@ function createAdminRouter({ prisma, provider, logger }) {
   }));
   return router;
 }
-module.exports = { createAdminRouter, lockIdentity };
+module.exports = { createAdminRouter, lockIdentity, ensureChefProfile };

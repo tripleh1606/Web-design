@@ -1,6 +1,6 @@
 const { parseId, validate } = require('./validation');
 const { servingsPossible } = require('./recipe');
-const { requireAction, scope } = require('./authorization');
+const { allowed, requireAction, scope } = require('./authorization');
 
 const dishInclude = {
   ingredients: { include: { ingredient: true }, orderBy: { ingredientId: 'asc' } },
@@ -64,6 +64,11 @@ async function recipeData(tx, lines, { single = false } = {}) {
 }
 
 function registerRelations(app, { prisma, route, success, notFound }) {
+  const requireAssignmentWrite = (req, res, next) => {
+    if (allowed(req, 'assignment.write') ||
+      (allowed(req, 'assignment.self.write') && req.auth?.chefId === parseId(req.params.id))) return next();
+    return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Bạn chỉ được thêm hoặc gỡ món trong hồ sơ đầu bếp của mình.' } });
+  };
   app.get('/api/dishes/:id/ingredients', requireAction('recipe.read'), route(async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return notFound(res);
@@ -116,22 +121,23 @@ function registerRelations(app, { prisma, route, success, notFound }) {
     const row = await prisma.chefDish.findFirst({ where: { chefId, dishId, chef: scope(req, 'chefs') }, include: { chef: true, dish: true } });
     return row ? success(res, row) : notFound(res);
   }));
-  app.post('/api/chefs/:id/dishes', requireAction('assignment.write'), route(async (req, res) => {
+  app.post('/api/chefs/:id/dishes', requireAssignmentWrite, route(async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return notFound(res);
-    if (!positiveInt(req.body?.dishId)) throw new BusinessError({ dishId: 'Chọn một món ăn hợp lệ.' });
+    if (!positiveInt(req.body?.dishId) || Object.keys(req.body).some(key => key !== 'dishId')) throw new BusinessError({ dishId: 'Chỉ gửi dishId của món ăn cần thêm.' });
     const result = await prisma.$transaction(async (tx) => {
-      if (!await tx.chef.findUnique({ where: { id } })) throw new BusinessError(undefined, 'NOT_FOUND');
+      if (!await tx.chef.findFirst({ where: { AND: [{ id }, scope(req, 'chefs')] } })) throw new BusinessError(undefined, 'NOT_FOUND');
       if (!await tx.dish.findUnique({ where: { id: req.body.dishId } })) throw new BusinessError({ dishId: 'Món ăn không tồn tại.' });
       if (await tx.chefDish.findUnique({ where: { chefId_dishId: { chefId: id, dishId: req.body.dishId } } })) throw new BusinessError({ dishId: 'Món này đã được gán cho đầu bếp.' });
       return tx.chefDish.create({ data: { chefId: id, dishId: req.body.dishId }, include: { dish: true, chef: true } });
     });
     return success(res, result);
   }));
-  app.delete('/api/chefs/:id/dishes/:dishId', requireAction('assignment.write'), route(async (req, res) => {
+  app.delete('/api/chefs/:id/dishes/:dishId', requireAssignmentWrite, route(async (req, res) => {
     const chefId = parseId(req.params.id), dishId = parseId(req.params.dishId);
     if (chefId === null || dishId === null) return notFound(res);
-    await prisma.chefDish.delete({ where: { chefId_dishId: { chefId, dishId } } });
+    const deleted = await prisma.chefDish.deleteMany({ where: { chefId, dishId, chef: scope(req, 'chefs') } });
+    if (!deleted.count) return notFound(res);
     return success(res, null);
   }));
 }

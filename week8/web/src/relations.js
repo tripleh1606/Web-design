@@ -11,24 +11,24 @@ export async function recipePage(ctx, id, helpers) {
     if (ctx.signal.aborted) return;
     document.title = `Soucha · Công thức ${dish.name}`;
     const table = el('table', { className: 'relation-table' },
-      el('thead', {}, el('tr', {}, ['Nguyên liệu', 'Lượng / phần', 'Tồn kho', 'Đủ cho', 'Thao tác'].map((title) => el('th', { scope: 'col' }, title)))),
+      el('thead', {}, el('tr', {}, ['Nguyên liệu', 'Lượng / phần', 'Tồn kho', 'Đủ cho', ...(helpers.can('recipe.write') ? ['Thao tác'] : [])].map((title) => el('th', { scope: 'col' }, title)))),
       el('tbody', {}, dish.ingredients.map((line) => el('tr', {},
         el('td', {}, line.ingredient.name), el('td', {}, `${line.amount} ${line.ingredient.unit}`),
         el('td', {}, `${line.ingredient.stock} ${line.ingredient.unit}`),
         el('td', {}, `${Math.floor(line.ingredient.stock / line.amount)} phần`),
-        el('td', {}, el('div', { className: 'actions' }, link(`${base}/ingredients/${line.ingredientId}/edit`, 'Sửa lượng', 'button secondary'), link(`${base}/ingredients/${line.ingredientId}/delete`, 'Gỡ', 'button danger-outline')))))));
+        helpers.can('recipe.write') ? el('td', {}, el('div', { className: 'actions' }, link(`${base}/ingredients/${line.ingredientId}/edit`, 'Sửa lượng', 'button secondary'), link(`${base}/ingredients/${line.ingredientId}/delete`, 'Gỡ', 'button danger-outline'))) : null))));
     ctx.body.replaceChildren(link('/admin/dishes', '← Quay lại danh sách món', 'back'),
-      helpers.pageHeader(dish.name, 'Công thức và nguyên liệu', link(`${base}/edit`, 'Sửa món & công thức', 'button secondary')),
+      helpers.pageHeader(dish.name, 'Công thức và nguyên liệu', helpers.can('dish.write') ? link(`${base}/edit`, 'Sửa món & công thức', 'button secondary') : null),
       el('section', { className: 'recipe-summary' }, dishImage(dish, 'recipe-summary-image'),
         el('div', {}, el('p', {}, dish.description || 'Chưa có mô tả.'),
           el('p', { className: 'recipe-total', 'data-servings': String(dish.servings) }, 'Có thể làm ', el('strong', {}, String(dish.servings)), ' phần với nguyên liệu hiện tại.'),
           el('p', { className: 'muted' }, 'Số phần được tính theo nguyên liệu thiếu nhất; công thức trống = 0 phần.'))),
       el('section', { className: 'relation-panel' },
-        el('div', { className: 'relation-heading' }, el('h2', {}, 'Nguyên liệu trong công thức'), link(`${base}/ingredients/new`, '+ Thêm nguyên liệu', 'button')),
+        el('div', { className: 'relation-heading' }, el('h2', {}, 'Nguyên liệu trong công thức'), helpers.can('recipe.write') ? link(`${base}/ingredients/new`, '+ Thêm nguyên liệu', 'button') : null),
         dish.ingredients.length ? el('div', { className: 'relation-table-wrap' }, table) : el('p', { className: 'muted' }, 'Chưa có nguyên liệu trong công thức.')),
-      el('section', { className: 'relation-panel' }, el('h2', {}, 'Đầu bếp phụ trách'),
+      Array.isArray(dish.chefs) ? el('section', { className: 'relation-panel' }, el('h2', {}, 'Đầu bếp phụ trách'),
         dish.chefs.length ? el('ul', {}, dish.chefs.map((row) => el('li', {}, link(`/admin/chefs/${row.chefId}`, row.chef.name)))) : el('p', { className: 'muted' }, 'Chưa gán đầu bếp. Gán món tại trang chi tiết đầu bếp.'),
-        link('/admin/chefs', 'Quản lý đầu bếp →', 'back')));
+        link('/admin/chefs', 'Quản lý đầu bếp →', 'back')) : null);
   } catch (error) { helpers.errorPanel(error, ctx, '/admin/dishes'); }
 }
 
@@ -38,26 +38,29 @@ export async function chefPage(ctx, id, helpers) {
   try {
     const chef = await request('chefs', { id, signal: ctx.signal });
     if (ctx.signal.aborted) return;
-    document.title = `Soucha · Món của ${chef.name}`;
+    const ownCookingList = helpers.ownChefId === Number(id);
+    document.title = ownCookingList ? 'Soucha · Món tôi có thể chế biến' : `Soucha · Món của ${chef.name}`;
+    const writableAssignments = helpers.canManageAssignment(id);
 
     let allDishes = null;
     let dishesLoading = false;
     let isOpen = false;
 
-    const subtitleNode = el('p', {}, `${chef.specialty} · ${chef.dishes.length} món đã gán`);
+    const subtitle = () => `${chef.name} · ${chef.specialty} · ${chef.dishes.length} món có thể chế biến`;
+    const subtitleNode = el('p', {}, subtitle());
     const headerNode = el('div', { className: 'page-heading' },
       el('div', {},
         el('span', { className: 'eyebrow' }, 'SOUCHA / QUẢN TRỊ'),
-        el('h1', {}, chef.name),
+        el('h1', {}, ownCookingList ? 'Món tôi có thể chế biến' : chef.name),
         subtitleNode
       ),
-      link(`/admin/chefs/${id}/edit`, 'Sửa đầu bếp', 'button secondary')
+      helpers.can('chef.write') ? link(`/admin/chefs/${id}/edit`, 'Sửa đầu bếp', 'button secondary') : null
     );
 
     const assignedContainer = el('div', { className: 'assigned-dishes-container' });
     function renderAssignedDishes() {
       if (!chef.dishes.length) {
-        assignedContainer.replaceChildren(el('p', { className: 'muted' }, 'Chưa có món nào được gán.'));
+        assignedContainer.replaceChildren(el('p', { className: 'muted' }, 'Chưa có món nào. Bấm nút thêm món bên dưới để chọn món bạn có thể chế biến.'));
         return;
       }
       const list = el('div', { className: 'admin-list' }, chef.dishes.map((row) =>
@@ -67,7 +70,7 @@ export async function chefPage(ctx, id, helpers) {
             el('h3', {}, link(`/admin/dishes/${row.dishId}`, row.dish.name)),
             el('p', {}, `${categoryLabel(row.dish.category)} · ${money(row.dish.price)}`)
           ),
-          link(`${base}/dishes/${row.dishId}/delete`, 'Gỡ món', 'button danger-outline')
+          writableAssignments ? el('div', { className: 'actions' }, link(`${base}/dishes/${row.dishId}/delete`, ownCookingList ? 'Gỡ khỏi danh sách' : 'Gỡ món', 'button danger-outline')) : null
         )
       ));
       assignedContainer.replaceChildren(list);
@@ -75,14 +78,19 @@ export async function chefPage(ctx, id, helpers) {
     renderAssignedDishes();
 
     const errorBanner = el('p', { className: 'field-error', role: 'alert' });
-    const dropdownContent = el('div', { className: 'dropdown-content', hidden: true });
+    const normalizeSearch = value => value.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLocaleLowerCase('vi').trim();
+    const availableResults = el('div');
+    const searchInput = el('input', { id: 'cooking-dish-search', type: 'search', placeholder: 'Nhập tên món…', onInput: renderAvailableDishes });
+    const dropdownContent = el('div', { id: 'cooking-dish-picker', className: 'dropdown-content', hidden: true },
+      el('div', { className: 'field' }, el('label', { htmlFor: 'cooking-dish-search' }, 'Tìm món trong thực đơn'), searchInput), errorBanner, availableResults);
 
     function renderAvailableDishes() {
       const assignedIds = new Set(chef.dishes.map((r) => r.dishId));
-      const available = (allDishes || []).filter((d) => !assignedIds.has(d.id));
+      const terms = normalizeSearch(searchInput.value).split(/\s+/).filter(Boolean);
+      const available = (allDishes || []).filter((d) => !assignedIds.has(d.id) && terms.every(term => normalizeSearch(d.name).includes(term)));
 
       if (!available.length) {
-        dropdownContent.replaceChildren(errorBanner, el('p', { className: 'muted' }, 'Mọi món đã được gán, hoặc thực đơn đang trống.'));
+        availableResults.replaceChildren(el('p', { className: 'muted', role: 'status' }, searchInput.value.trim() ? 'Không tìm thấy món phù hợp chưa có trong danh sách của bạn.' : 'Không còn món nào để thêm, hoặc thực đơn đang trống.'));
         return;
       }
 
@@ -107,7 +115,7 @@ export async function chefPage(ctx, id, helpers) {
               });
               if (ctx.signal.aborted) return;
               chef.dishes.push(res && res.dish ? res : { chefId: Number(id), dishId: dish.id, dish });
-              subtitleNode.textContent = `${chef.specialty} · ${chef.dishes.length} món đã gán`;
+              subtitleNode.textContent = subtitle();
               renderAssignedDishes();
               renderAvailableDishes();
             } catch (err) {
@@ -128,11 +136,11 @@ export async function chefPage(ctx, id, helpers) {
             el('h3', {}, link(`/admin/dishes/${dish.id}`, dish.name)),
             el('p', {}, `${categoryLabel(dish.category)} · ${money(dish.price)}`)
           ),
-          addBtn
+          el('div', { className: 'actions' }, addBtn)
         );
       }));
 
-      dropdownContent.replaceChildren(errorBanner, list);
+      availableResults.replaceChildren(el('p', { className: 'muted', role: 'status' }, `${available.length} món có thể thêm`), list);
     }
 
     const dropdownArrow = el('span', { className: 'dropdown-arrow', 'aria-hidden': 'true' }, '▶');
@@ -140,6 +148,7 @@ export async function chefPage(ctx, id, helpers) {
       type: 'button',
       className: 'dropdown-toggle-heading',
       'aria-expanded': 'false',
+      'aria-controls': 'cooking-dish-picker',
       onClick: async () => {
         isOpen = !isOpen;
         toggleButton.setAttribute('aria-expanded', String(isOpen));
@@ -148,33 +157,33 @@ export async function chefPage(ctx, id, helpers) {
 
         if (!allDishes && !dishesLoading) {
           dishesLoading = true;
-          dropdownContent.replaceChildren(el('p', { className: 'muted' }, 'Đang tải danh sách món…'));
+          availableResults.replaceChildren(el('p', { className: 'muted' }, 'Đang tải danh sách món…'));
           try {
             allDishes = await request('dishes', { signal: ctx.signal });
             dishesLoading = false;
-            if (!ctx.signal.aborted) renderAvailableDishes();
+            if (!ctx.signal.aborted) { renderAvailableDishes(); if (isOpen) searchInput.focus(); }
           } catch (err) {
             dishesLoading = false;
             if (ctx.signal.aborted) return;
-            dropdownContent.replaceChildren(el('p', { className: 'field-error' }, 'Không thể tải danh sách món. Vui lòng thử lại.'));
+            availableResults.replaceChildren(el('p', { className: 'field-error' }, 'Không thể tải danh sách món. Đóng và mở lại để thử lại.'));
           }
         } else if (allDishes) {
           renderAvailableDishes();
         }
       }
-    }, dropdownArrow, el('h2', { className: 'dropdown-title' }, 'Thêm món phụ trách'));
+    }, dropdownArrow, el('span', { className: 'dropdown-title' }, ownCookingList ? '+ Thêm món có thể chế biến' : 'Thêm món phụ trách'));
 
     ctx.body.replaceChildren(
-      link('/admin/chefs', '← Quay lại đầu bếp', 'back'),
+      link(ownCookingList ? '/dishes' : '/admin/chefs', ownCookingList ? '← Xem thực đơn' : '← Quay lại đầu bếp', 'back'),
       headerNode,
       el('section', { className: 'relation-panel' },
-        el('h2', {}, 'Món đầu bếp có thể làm'),
+        el('h2', {}, ownCookingList ? 'Danh sách món của tôi' : 'Món đầu bếp có thể làm'),
         assignedContainer
       ),
-      el('section', { className: 'relation-panel dropdown-panel' },
+      writableAssignments ? el('section', { className: 'relation-panel dropdown-panel' },
         toggleButton,
         dropdownContent
-      )
+      ) : null
     );
   } catch (error) { helpers.errorPanel(error, ctx, '/admin/chefs'); }
 }

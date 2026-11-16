@@ -58,7 +58,7 @@ test('authenticated role matrix denies direct access to restricted collections a
       ['/api/ingredients', { name: 'Forbidden ingredient', unit: 'g', stock: 1 }],
       ['/api/chefs', { name: 'Forbidden chef', specialty: 'Tea' }],
       [`/api/dishes/${dishes[0].id}/ingredients`, { ingredientId: ingredients[1].id, amount: 1 }],
-      [`/api/chefs/${chefs[0].id}/dishes`, { dishId: dishes[1].id }]
+      [`/api/chefs/${chefs[1].id}/dishes`, { dishId: dishes[0].id }]
     ]) {
       assert.equal((await call(role, path, { method: 'POST', data })).status, role === 'unknown' ? 401 : 403, `${role} POST ${path}`);
     }
@@ -83,7 +83,7 @@ test('direct patch and delete bypass attempts cannot change resources or relatio
       ['DELETE', `/api/chefs/${chefs[0].id}`],
       ['PATCH', `/api/dishes/${dishes[0].id}/ingredients/${ingredients[0].id}`, { amount: 99 }],
       ['DELETE', `/api/dishes/${dishes[0].id}/ingredients/${ingredients[0].id}`],
-      ['DELETE', `/api/chefs/${chefs[0].id}/dishes/${dishes[0].id}`]
+      ['DELETE', `/api/chefs/${chefs[1].id}/dishes/${dishes[1].id}`]
     ]) assert.equal((await call(role, path, { method, data })).status, 403, `${role} ${method} ${path}`);
   }
   assert.equal((await app.prisma.dish.findUnique({ where: { id: dishes[0].id } })).price, 100);
@@ -128,13 +128,14 @@ test('customer and chef scopes apply to list, paging, detail and relation traver
   assert.equal((await call('customer', `/api/dishes/${dishes[1].id}`)).status, 404);
   const page = await call('customer', '/api/dishes/paged');
   assert.equal(page.body.data.total, 1);
-  assert.deepEqual(ids(await call('chef', '/api/dishes')), [dishes[0].id]);
+  assert.deepEqual(ids(await call('chef', '/api/dishes')), dishes.map(dish => dish.id).sort((a, b) => a - b));
+  const chefPage = await call('chef', '/api/dishes/paged?mode=basic');
+  assert.equal(chefPage.body.data.total, 2);
+  assert.deepEqual(chefPage.body.data.items.map(dish => dish.id).sort((a, b) => a - b), dishes.map(dish => dish.id).sort((a, b) => a - b));
+  assert.equal((await call('chef', `/api/dishes/${dishes[1].id}`)).body.data.canUpdateAvailability, false);
   assert.deepEqual(ids(await call('chef', '/api/ingredients')), [ingredients[0].id]);
   assert.deepEqual(ids(await call('chef', '/api/chefs')), [chefs[0].id]);
   for (const path of [
-    `/api/dishes/${dishes[1].id}`,
-    `/api/dishes/${dishes[1].id}/ingredients`,
-    `/api/dishes/${dishes[1].id}/ingredients/${ingredients[1].id}`,
     `/api/ingredients/${ingredients[1].id}`,
     `/api/chefs/${chefs[1].id}`,
     `/api/chefs/${chefs[1].id}/dishes`,
@@ -173,12 +174,12 @@ test('issued tokens reflect role, status, chef link and assignment changes immed
   assert.equal((await call('manager', '/api/dishes')).status, 401);
   await app.prisma.user.update({ where: { id: users.manager.id }, data: { status: 'active' } });
   await app.prisma.chefDish.delete({ where: { chefId_dishId: { chefId: chefs[0].id, dishId: dishes[0].id } } });
-  assert.equal((await call('chef', `/api/dishes/${dishes[0].id}`)).status, 404);
+  assert.equal((await call('chef', `/api/dishes/${dishes[0].id}`)).body.data.canUpdateAvailability, false);
   assert.deepEqual(ids(await call('chef', '/api/ingredients')), []);
   await app.prisma.chefDish.create({ data: { chefId: chefs[0].id, dishId: dishes[0].id } });
   await app.prisma.user.update({ where: { id: users.chef.id }, data: { chefId: null } });
-  assert.deepEqual(ids(await call('chef', '/api/dishes')), []);
-  assert.equal((await call('chef', `/api/dishes/${dishes[0].id}`)).status, 404);
+  assert.deepEqual(ids(await call('chef', '/api/dishes')), dishes.map(dish => dish.id).sort((a, b) => a - b));
+  assert.equal((await call('chef', `/api/dishes/${dishes[0].id}`)).body.data.canUpdateAvailability, false);
   await app.prisma.user.update({ where: { id: users.chef.id }, data: { chefId: chefs[0].id } });
 });
 
@@ -199,6 +200,28 @@ test('dish state and assignment are rechecked on direct writes after opening a d
   await app.prisma.chefDish.create({ data: { chefId: chefs[0].id, dishId: id } });
   assert.equal((await call('chef', path, { method: 'PATCH', data: { available: false } })).status, 200);
   await app.prisma.dish.update({ where: { id }, data: { available: true } });
+});
+
+test('chef self-assignment adds and removes only links for the current linked profile', async () => {
+  const own = `/api/chefs/${chefs[0].id}/dishes`;
+  const other = `/api/chefs/${chefs[1].id}/dishes`;
+  const dishId = dishes[1].id;
+  for (const data of [{ dishId, chefId: chefs[1].id }, { dishId, role: 'admin' }, { dishId: -1 }]) {
+    assert.equal((await call('chef', own, { method: 'POST', data })).body.ok, false);
+  }
+  assert.equal((await call('chef', other, { method: 'POST', data: { dishId: dishes[0].id } })).status, 403);
+  assert.equal((await call('chef', `${other}/${dishId}`, { method: 'DELETE' })).status, 403);
+  const responses = await Promise.all([1, 2].map(() => call('chef', own, { method: 'POST', data: { dishId } })));
+  assert.equal(responses.filter(response => response.body.ok).length, 1);
+  assert.equal(await app.prisma.chefDish.count({ where: { chefId: chefs[0].id, dishId } }), 1);
+  assert.equal((await call('chef', `${own}/${dishId}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await call('chef', `${own}/${dishId}`, { method: 'DELETE' })).status, 404);
+  assert.equal(await app.prisma.dish.count(), 2);
+  assert.equal(await app.prisma.chefDish.count({ where: { chefId: chefs[1].id, dishId } }), 1);
+  await app.prisma.user.update({ where: { id: users.chef.id }, data: { chefId: null } });
+  assert.equal((await call('chef', own, { method: 'POST', data: { dishId } })).status, 403);
+  assert.equal((await call('chef', '/api/dishes/paged?mode=basic')).body.data.total, 2);
+  await app.prisma.user.update({ where: { id: users.chef.id }, data: { chefId: chefs[0].id } });
 });
 
 test('only admins manage accounts, and concurrent demotions preserve an admin', async () => {
@@ -236,11 +259,29 @@ test('manager and admin writes persist, and admin controls chef links', async ()
     const promoted = await app.call(`/api/users/${user.id}/role`, { method: 'PATCH', data: { role: 'chef' }, headers });
     assert.equal(promoted.status, 200);
     assert.equal((await app.prisma.user.findUnique({ where: { id: user.id } })).role, 'chef');
+    assert.ok(promoted.body.data.chefId);
   }
+  const customerChefId = (await app.prisma.user.findUnique({ where: { id: users.customer.id } })).chefId;
   const link = await app.call(`/api/users/${users.staff.id}/chef`, { method: 'PATCH', data: { chefId: chefs[1].id }, headers });
   assert.equal(link.status, 200);
   assert.equal((await app.prisma.user.findUnique({ where: { id: users.staff.id } })).chefId, chefs[1].id);
   const duplicate = await app.call(`/api/users/${users.customer.id}/chef`, { method: 'PATCH', data: { chefId: chefs[1].id }, headers });
   assert.ok(duplicate.status >= 400 || duplicate.body.ok === false);
-  assert.equal((await app.prisma.user.findUnique({ where: { id: users.customer.id } })).chefId, null);
+  assert.equal((await app.prisma.user.findUnique({ where: { id: users.customer.id } })).chefId, customerChefId);
+});
+
+test('admin assigning chef repairs an unlinked account and preserves its profile on repeat', async () => {
+  const admin = await app.prisma.user.findFirst({ where: { role: 'admin', status: 'active' } });
+  const headers = { Authorization: `Bearer ${issuer.issue(admin.id)}` };
+  await app.prisma.user.update({ where: { id: users.chef.id }, data: { chefId: null } });
+  const countBefore = await app.prisma.chef.count();
+  const assign = () => app.call(`/api/users/${users.chef.id}/role`, { method: 'PATCH', data: { role: 'chef' }, headers });
+  const [first, second] = await Promise.all([assign(), assign()]);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.ok(first.body.data.chefId);
+  assert.equal(first.body.data.chefId, second.body.data.chefId);
+  assert.equal(await app.prisma.chef.count(), countBefore + 1);
+  assert.equal((await call('chef', '/api/auth/me')).body.data.user.chefId, first.body.data.chefId);
+  assert.deepEqual(ids(await call('chef', '/api/chefs')), [first.body.data.chefId]);
 });

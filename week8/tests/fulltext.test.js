@@ -180,8 +180,14 @@ test('smart corrections cross structured filters while respecting customer and c
       assert.equal(corrected.correctedQuery, 'matcha');
       assert.deepEqual(corrected.items.map(row => row.id), [3]);
       const hidden = await search('chanba', scope);
-      assert.equal(hidden.correctedQuery, undefined);
-      assert.equal(hidden.total, 0);
+      if (scope.role === 'customer') {
+        assert.equal(hidden.correctedQuery, undefined);
+        assert.equal(hidden.total, 0);
+      } else {
+        assert.equal(hidden.correctedQuery, 'bancha');
+        assert.equal(hidden.items[0].id, 2);
+        assert.equal(hidden.items.some(row => row.id === 2), true);
+      }
     }
     const admin = await search('chanba', { role: 'admin' });
     assert.equal(admin.correctedQuery, 'bancha');

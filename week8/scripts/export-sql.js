@@ -12,7 +12,10 @@ const corePath = path.join(temp, 'schema.prisma');
 let result;
 try {
   const schema = fs.readFileSync(path.join(root, 'api/prisma/schema.prisma'), 'utf8');
-  fs.writeFileSync(corePath, schema.split('enum AccountStatus')[0]);
+  const coreSchema = schema.split('enum AccountStatus')[0]
+    .replace(/^\s*user\s+User\?\s*$/gm, '')
+    .replace(/^\s*status\s+String\s+@default\("draft"\)\s*$/gm, '');
+  fs.writeFileSync(corePath, coreSchema);
   result = spawnSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'diff', '--from-empty', '--to-schema-datamodel', corePath, '--script'], {
     cwd: root, encoding: 'utf8', env: { ...process.env, RUST_LOG: 'info' }
   });

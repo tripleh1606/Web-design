@@ -4,6 +4,9 @@ Nguồn cấu trúc: `week3/restaurant/prisma/schema.prisma`. Nguồn dữ liệ
 
 ## File và cách sử dụng
 
+- `004-mfa.sql`: ba bảng MFA riêng của Week 8, chạy thêm sau schema tài khoản. Dùng `npm run setup:mfa` từ thư mục `week8` để áp dụng an toàn và cấu hình khóa mã hóa; không dùng `db:push` trên DB FTS dùng chung. Xem [MFA](../../docs/MFA.md).
+- `005-dish-status.sql`: bổ sung `dishes.status` với mặc định `draft` cho điều kiện ABAC. Chạy được nhiều lần và giữ trạng thái đã có, quan hệ đầu bếp, giá và tồn kho. Với PostgreSQL đã có dữ liệu, áp dụng file này qua SQL Editor hoặc `node node_modules/prisma/build/index.js db execute --schema api/prisma/schema.prisma --file api/sql/005-dish-status.sql` từ `week8` sau khi cấu hình `DATABASE_URL`. SQLite test được đồng bộ từ schema bằng fixture hiện có.
+
 - `001-schema.sql`: PostgreSQL DDL cho `dishes`, `chefs`, `ingredients`, `dish_ingredients`, `chef_dishes`; giữ nguyên tên bảng/cột, khóa chính và cascade của tuần 3. Chạy cho **database mới trống**.
 - `002-seed.sql`: tám món Soucha, hai đầu bếp, ba nguyên liệu, sáu dòng công thức và bốn liên kết đầu bếp–món. Chỉ chèn mẫu còn thiếu; không cập nhật giá/tồn kho hiện có.
 - `003-auth.sql`: tạo bảng tài khoản, phiên, OTP, giới hạn và đặt lại mật khẩu tương thích Week 6. Với database mới dùng SQL, chạy sau hai file trên. Với database Week 5 chỉ có bảng món ăn, chạy riêng file này một lần. Với database đã có đầy đủ schema tài khoản Week 6, bỏ qua file này và generate Prisma Client của Week 7.

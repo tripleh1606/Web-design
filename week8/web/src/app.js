@@ -1,5 +1,6 @@
 import { request, setAccessToken, savedAccessToken } from './api.js';
 import { authPage, authPages } from './auth.js';
+import { mfaPage, securityPage, clearPendingChallenge } from './mfa.js';
 import { resources, money, categoryLabel, validateForm } from './resources.js';
 import { el, link, dishImage } from './dom.js';
 import { createRecipeEditor } from './recipe-editor.js';
@@ -20,8 +21,9 @@ let loadingAccount = false;
 const can = (action) => account?.capabilities?.includes(action) || account?.enabled === false;
 function updateNavigation() {
   document.getElementById('account-logout').hidden = !account.user;
+  document.getElementById('account-security').hidden = !account.user;
   for (const item of document.querySelectorAll('.site-header nav a[href^="/dishes"], .site-header nav a[href^="/admin"]')) {
-    item.hidden = !account.user || (item.pathname.startsWith('/admin') && !can('dish.write') && !can('user.role.update'));
+    item.hidden = account.enabled !== false && (!account.user || (item.pathname.startsWith('/admin') && !can('dish.write') && !can('user.role.update')));
   }
 }
 async function setAccount({ accessToken = '', ...data }) {
@@ -180,7 +182,7 @@ async function dishDetail(ctx, id) {
     if (ctx.signal.aborted) return;
     document.title = `Soucha · ${record.name}`;
     const message = el('p', { className: 'field-error', role: 'alert' });
-    const availability = can('dish.availability.update') ? el('button', { type: 'button', onClick: async (event) => {
+    const availability = can('dish.availability.update') && (account.user?.role !== 'chef' || record.status === 'draft') ? el('button', { type: 'button', onClick: async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
       try {
@@ -246,7 +248,7 @@ async function recordForm(ctx, resource, id) {
     if (ctx.signal.aborted) return;
   }
   const values = Object.fromEntries(config.fields.map((field) => [field.key,
-    record?.[field.key] ?? (field.type === 'checkbox' ? true : field.key === 'stock' ? '0' : '')]));
+    record?.[field.key] ?? (field.default ?? (field.type === 'checkbox' ? true : field.key === 'stock' ? '0' : ''))]));
   const inputs = {};
   const fieldErrors = {};
   const recipe = resource === 'dishes' ? createRecipeEditor({ ingredients, initial: record?.ingredients || [] }) : undefined;
@@ -266,8 +268,8 @@ async function recordForm(ctx, resource, id) {
     if (!first) recipeInput?.focus();
   };
   for (const field of config.fields) {
-    const input = el(field.type === 'textarea' ? 'textarea' : 'input', {
-      id: field.key, name: field.key, type: field.type === 'textarea' ? undefined : field.type || 'text',
+    const input = el(field.type === 'select' ? 'select' : field.type === 'textarea' ? 'textarea' : 'input', {
+      id: field.key, name: field.key, type: ['textarea', 'select'].includes(field.type) ? undefined : field.type || 'text',
       placeholder: field.placeholder, maxLength: field.max || 120,
       required: field.required || false, 'aria-describedby': `${field.key}-error`,
       ...(field.type === 'number' ? { min: '0', max: '2147483647', step: '1' } : {}),
@@ -277,7 +279,7 @@ async function recordForm(ctx, resource, id) {
         fieldErrors[field.key].textContent = '';
         input.setAttribute('aria-invalid', 'false');
       }
-    });
+    }, (field.options || []).map(value => el('option', { value, selected: value === values[field.key] }, value)));
     inputs[field.key] = input;
     fieldErrors[field.key] = el('span', { id: `${field.key}-error`, className: 'field-error' });
     const label = el('label', { htmlFor: field.key }, field.label + (field.required ? ' *' : ''));
@@ -482,6 +484,8 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   currentController?.abort();
   const url = new URL(location.href);
   const pathname = url.pathname.replace(/\/$/, '') || '/';
+  if (pathname !== '/mfa') clearPendingChallenge();
+  if (pathname === '/account/security' && !account.user) return navigate('/login', { replace: true });
   if (account.enabled !== false) {
     if (!account.user && (!authPages.has(pathname) || pathname === '/logout/confirm')) {
       return navigate('/login', { replace: true });
@@ -500,8 +504,8 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   routeUrl = url;
   restoringScroll = true;
   document.querySelectorAll('.site-header nav a').forEach((anchor) => anchor.setAttribute('aria-current',
-    (anchor.pathname === '/logout/confirm' ? pathname === anchor.pathname :
-      !authPages.has(pathname) && pathname.startsWith('/admin') === anchor.pathname.startsWith('/admin')) ? 'page' : 'false'));
+    (['/logout/confirm', '/account/security'].includes(anchor.pathname) ? pathname === anchor.pathname :
+      pathname !== '/account/security' && !authPages.has(pathname) && pathname.startsWith('/admin') === anchor.pathname.startsWith('/admin')) ? 'page' : 'false'));
   const admin = pathname.match(/^\/admin\/(dishes|chefs|ingredients)(?:\/(new)|\/([^/]+)\/(edit|delete))?$/);
   const detail = admin ? null : pathname.match(/^\/admin\/(dishes|chefs)\/([^/]+)$/);
   const ingredientNew = pathname.match(/^\/admin\/dishes\/([^/]+)\/ingredients\/new$/);
@@ -512,7 +516,11 @@ function renderRoute({ restore = false, targetY = 0 } = {}) {
   ctx.reserveHeight = sameMenu ? priorGridHeight : 0;
   const helpers = { loading, errorPanel, pageHeader, navigate };
   let job;
-  if (pathname.startsWith('/admin/') && !(['/admin/users', '/admin/authorization'].includes(pathname) ? can('user.role.update') : can('dish.write'))) {
+  if (pathname === '/mfa') {
+    job = mfaPage(ctx, { navigate, setAccount });
+  } else if (pathname === '/account/security') {
+    job = securityPage(ctx, { navigate, setAccount });
+  } else if (pathname.startsWith('/admin/') && !(['/admin/users', '/admin/authorization'].includes(pathname) ? can('user.role.update') : can('dish.write'))) {
     ctx.body.replaceChildren(panel('error', 'Không có quyền truy cập', 'Tài khoản hiện tại không được phép truy cập trang này.', link('/dishes', 'Về thực đơn', 'button')));
   } else if (pathname === '/admin/users') {
     job = usersPage(ctx);

@@ -103,12 +103,14 @@ function pageQuery(options) {
 }
 
 function smartPageQuery(options) {
+  const visibility = [];
+  if (options.scope?.role === 'customer') visibility.push(Prisma.sql`"available" = ${true}`);
+  if (options.scope?.role === 'chef') visibility.push(Prisma.sql`EXISTS (SELECT 1 FROM "chef_dishes" WHERE "chef_dishes"."dishId" = "dishes"."id" AND "chef_dishes"."chefId" = ${options.scope.chefId || 0})`);
+  const visibleWhere = visibility.length ? Prisma.sql`WHERE ${Prisma.join(visibility, ' AND ')}` : Prisma.empty;
   const filters = [];
   if (options.category !== undefined) filters.push(Prisma.sql`"category" = ${options.category}`);
   if (options.minPrice !== undefined) filters.push(Prisma.sql`"price" >= ${options.minPrice}`);
   if (options.maxPrice !== undefined) filters.push(Prisma.sql`"price" <= ${options.maxPrice}`);
-  if (options.scope?.role === 'customer') filters.push(Prisma.sql`"available" = ${true}`);
-  if (options.scope?.role === 'chef') filters.push(Prisma.sql`EXISTS (SELECT 1 FROM "chef_dishes" WHERE "chef_dishes"."dishId" = "named"."id" AND "chef_dishes"."chefId" = ${options.scope.chefId || 0})`);
   if (options.available !== undefined) filters.push(Prisma.sql`"available" = ${options.available}`);
   const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, ' AND ')}` : Prisma.empty;
   const tsquery = Prisma.sql`plainto_tsquery('simple', ${options.q})`;
@@ -117,18 +119,18 @@ function smartPageQuery(options) {
   // match; unrelated trailing terms cannot be silently discarded. Resolve an
   // unknown long token to a unique complete anagram before retrieving records,
   // so a row containing a weaker word like "chai" cannot hide all "matcha" rows.
-  // The correction vocabulary is global, independent of structured filters.
+  // Corrections use all authorized records, independent of structured filters.
   // Materialization shares scoring between COUNT and the selected page.
   return Prisma.sql`WITH "terms" AS MATERIALIZED (
       SELECT unnest(tsvector_to_array(to_tsvector('simple', public.soucha_normalize_search(${options.q})))) AS term
     ), "named" AS MATERIALIZED (
       SELECT "id", "name", "description", "price", "category", "image", "available", "createdAt", "fts",
         tsvector_to_array(to_tsvector('simple', public.soucha_normalize_search("name"))) AS "__words"
-      FROM "dishes"
+      FROM "dishes" ${visibleWhere}
     ), "filtered" AS MATERIALIZED (
       SELECT * FROM "named" ${where}
     ), "vocabulary" AS MATERIALIZED (
-      SELECT DISTINCT unnest("__words") AS word FROM "filtered"
+      SELECT DISTINCT unnest("__words") AS word FROM "named"
     ), "term_signatures" AS MATERIALIZED (
       SELECT term, ARRAY(SELECT letter FROM regexp_split_to_table(term, '') AS letters(letter) ORDER BY letter) AS letters
       FROM "terms" WHERE length(term) BETWEEN 5 AND 12

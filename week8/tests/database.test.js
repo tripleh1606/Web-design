@@ -8,7 +8,8 @@ const read = (relative) => fs.readFileSync(path.resolve(__dirname, relative), 'u
 test('Week 7 preserves week-3 business models and explicitly adds its search column/indexes', async () => {
   const normalize = (text) => text.split('enum AccountStatus')[0].replace(/output\s*=\s*"[^"]*"/, 'output = "GENERATED"')
     .replaceAll('\r\n', '\n').split('\n').filter((line) => !/^\s*\/\//.test(line) && !/^\s*fts\s+Unsupported\("tsvector"\)\?\s*$/.test(line) &&
-      !/^\s*@@index.*map: "dishes_(?:fts|name_trgm|adv_filter)_idx"\)\s*$/.test(line)).join('\n').trim();
+      !/^\s*@@index.*map: "dishes_(?:fts|name_trgm|adv_filter)_idx"\)\s*$/.test(line) &&
+      !/^\s*status\s+String\s+@default\("draft"\)/.test(line) && !/^\s*user\s+User\?\s*$/.test(line)).join('\n').trim();
   assert.equal(normalize(read('../api/prisma/schema.prisma')), normalize(read('../../week3/restaurant/prisma/schema.prisma')));
   const schema = read('../api/prisma/schema.prisma');
   assert.match(schema, /fts\s+Unsupported\("tsvector"\)\?/);
@@ -30,6 +31,13 @@ test('SQL executes in PostgreSQL and preserves UTF-8, existing stock, relations 
     await db.exec(read('../api/sql/001-schema.sql'));
     await db.exec(read('../api/sql/002-seed.sql'));
     await db.exec(read('../api/sql/003-auth.sql'));
+    await db.exec(read('../api/sql/004-mfa.sql'));
+    await db.exec(read('../api/sql/004-mfa.sql')); // The additive MFA setup is idempotent.
+    await db.exec(read('../api/sql/005-dish-status.sql'));
+    await db.query("UPDATE dishes SET status = 'published' WHERE id = (SELECT min(id) FROM dishes)");
+    await db.exec(read('../api/sql/005-dish-status.sql'));
+    assert.equal((await db.query("SELECT count(*)::int AS total FROM dishes WHERE status = 'published'")).rows[0].total, 1);
+    assert.equal((await db.query("SELECT count(*)::int AS total FROM information_schema.tables WHERE table_name IN ('mfa_credentials','mfa_challenges','mfa_recovery_codes')")).rows[0].total, 3);
     for (const [table, expected] of [['dishes', 8], ['chefs', 2], ['ingredients', 3], ['dish_ingredients', 6], ['chef_dishes', 4]]) {
       assert.equal((await db.query(`SELECT count(*)::int AS total FROM ${table}`)).rows[0].total, expected, table);
     }

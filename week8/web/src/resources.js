@@ -5,7 +5,8 @@ export const resources = {
     { key: 'price', label: 'Giá (VND)', type: 'number', required: true },
     { key: 'category', label: 'Danh mục', placeholder: 'coffee / matcha / houjicha' },
     { key: 'image', label: 'Ảnh món', placeholder: '/beverages/matcha-latte.jpeg' },
-    { key: 'available', label: 'Đang phục vụ', type: 'checkbox' }
+    { key: 'available', label: 'Đang phục vụ', type: 'checkbox' },
+    { key: 'status', label: 'Trạng thái biên tập', type: 'select', default: 'draft', options: ['draft', 'published'] }
   ] },
   chefs: { label: 'Đầu bếp', singular: 'đầu bếp', fields: [
     { key: 'name', label: 'Tên đầu bếp', required: true }, { key: 'specialty', label: 'Chuyên môn', required: true }

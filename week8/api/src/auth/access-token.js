@@ -3,8 +3,8 @@ const jwt = require('jsonwebtoken');
 const { fail } = require('./response');
 const { ROLES } = require('./policy');
 
-const issuer = 'soucha-week7';
-const audience = 'soucha-week7-api';
+const issuer = 'soucha-week8';
+const audience = 'soucha-week8-api';
 const algorithm = 'HS256';
 const lifetimeSeconds = 60;
 
@@ -18,8 +18,8 @@ function createAccessTokens(secret, prisma) {
   }
   const key = createSecretKey(bytes);
 
-  function issue(userId) {
-    return jwt.sign({}, key, {
+  function issue(userId, { mfaVerified = false, authVersion = 0 } = {}) {
+    return jwt.sign({ mfa: mfaVerified, av: authVersion }, key, {
       algorithm, issuer, audience, subject: String(userId), jwtid: randomUUID(), expiresIn: lifetimeSeconds
     });
   }
@@ -44,13 +44,14 @@ function createAccessTokens(secret, prisma) {
         });
         if (user && user.status === 'active' && ROLES.includes(user.role)) {
           req.auth = { userId: user.id, email: user.email, role: user.role, status: user.status, chefId: user.chefId };
+          req.accessClaims = claims;
           return next();
         }
       } catch (error) {
         return next(error);
       }
     }
-    res.set('WWW-Authenticate', authorization ? 'Bearer realm="soucha-week7", error="invalid_token"' : 'Bearer realm="soucha-week7"');
+    res.set('WWW-Authenticate', authorization ? 'Bearer realm="soucha-week8", error="invalid_token"' : 'Bearer realm="soucha-week8"');
     return fail(res, 401, 'AUTH_REQUIRED', 'Vui lòng đăng nhập để tiếp tục.');
   }
 

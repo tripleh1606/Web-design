@@ -4,7 +4,7 @@ const { jsonForm } = require('./form');
 const { asyncRoute, ok, fail } = require('./response');
 const { POLICY } = require('./config');
 
-function createLoginRouter({ prisma, accessTokens, recaptchaVerifier, throttle }) {
+function createLoginRouter({ prisma, mfa, recaptchaVerifier, throttle }) {
   const router = express.Router();
   const { lock, lockUser, consume } = throttle;
   router.post('/login', jsonForm('email', 'password', 'g-recaptcha-response'), asyncRoute(async (req, res, next) => {
@@ -63,7 +63,7 @@ function createLoginRouter({ prisma, accessTokens, recaptchaVerifier, throttle }
       }
       if (user.status !== 'active' || !user.emailVerifiedAt) return { pending: true, needsCaptcha };
       await tx.loginAttempt.deleteMany({ where: { emailKey } });
-      return { user: { id: user.id, email: user.email } };
+      return mfa.afterPassword(tx, user);
     }, { timeout: 15000 });
     if (outcome.retry) {
       res.set('Retry-After', String(outcome.retry));
@@ -74,7 +74,11 @@ function createLoginRouter({ prisma, accessTokens, recaptchaVerifier, throttle }
       outcome.unavailable ? 'Dịch vụ xác minh tạm thời không sẵn sàng.' : 'Vui lòng hoàn thành xác minh reCAPTCHA.', { needsCaptcha: true });
     if (outcome.invalid) return fail(res, 401, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không đúng.', { needsCaptcha: outcome.needsCaptcha });
     if (outcome.pending) return fail(res, 403, 'ACCOUNT_PENDING', 'Vui lòng kích hoạt tài khoản bằng OTP trước khi đăng nhập.', { needsCaptcha: outcome.needsCaptcha });
-    return ok(res, { user: outcome.user, accessToken: accessTokens.issue(outcome.user.id), tokenType: 'Bearer' });
+    if (outcome.error) {
+      if (outcome.error.retryAfter) res.set('Retry-After', String(outcome.error.retryAfter));
+      return fail(res, outcome.error.status, outcome.error.code, outcome.error.message);
+    }
+    return ok(res, outcome.data);
   }));
   return router;
 }

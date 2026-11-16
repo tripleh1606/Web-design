@@ -2,7 +2,8 @@ const resources = {
   dishes: { model: 'dish', fields: {
     name: { required: true }, description: { nullable: true, max: 1000 },
     price: { required: true, type: 'integer' }, category: { nullable: true },
-    image: { nullable: true, image: true }, available: { type: 'boolean', default: true }
+    image: { nullable: true, image: true }, available: { type: 'boolean', default: true },
+    status: { values: ['draft', 'published'], default: 'draft' }
   } },
   chefs: { model: 'chef', fields: { name: { required: true }, specialty: { required: true } } },
   ingredients: { model: 'ingredient', fields: {
@@ -32,7 +33,10 @@ function validate(resource, body, partial = false) {
       continue;
     }
     const value = body[key];
-    if (rule.type === 'integer') {
+    if (rule.values) {
+      if (!rule.values.includes(value)) fields[key] = 'Chọn draft hoặc published.';
+      else data[key] = value;
+    } else if (rule.type === 'integer') {
       if (!Number.isInteger(value) || value < 0 || value > 2147483647) fields[key] = 'Phải là số nguyên không âm, tối đa 2147483647.';
       else data[key] = value;
     } else if (rule.type === 'boolean') {

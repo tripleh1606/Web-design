@@ -25,7 +25,7 @@ before(async () => {
   tokens = {};
   for (const role of [...roles, 'unknown']) {
     users[role] = await app.prisma.user.create({ data: {
-      email: `${role}@example.test`, passwordHash: 'unused', status: 'active', role,
+      email: `${role}@example.test`, passwordHash: 'unused', status: 'active', emailVerifiedAt: new Date(), role,
       ...(role === 'chef' ? { chefId: chefs[0].id } : {})
     } });
     tokens[role] = issuer.issue(users[role].id);
@@ -157,7 +157,7 @@ test('chef availability writes are isolated, scoped, and reject mixed fields', a
     assert.equal(persisted.price, 100);
     assert.equal(persisted.available, true);
   }
-  assert.equal((await call('chef', `/api/dishes/${dishes[1].id}/availability`, { method: 'PATCH', data: { available: true } })).status, 404);
+  assert.equal((await call('chef', `/api/dishes/${dishes[1].id}/availability`, { method: 'PATCH', data: { available: true } })).status, 403);
   const changed = await call('chef', dishPath + '/availability', { method: 'PATCH', data: { available: false } });
   assert.equal(changed.status, 200);
   assert.equal((await app.prisma.dish.findUnique({ where: { id: dishes[0].id } })).available, false);
@@ -182,6 +182,25 @@ test('issued tokens reflect role, status, chef link and assignment changes immed
   await app.prisma.user.update({ where: { id: users.chef.id }, data: { chefId: chefs[0].id } });
 });
 
+test('dish state and assignment are rechecked on direct writes after opening a detail', async () => {
+  const id = dishes[0].id;
+  const path = `/api/dishes/${id}/availability`;
+  assert.equal((await call('chef', `/api/dishes/${id}`)).status, 200);
+  await app.prisma.dish.update({ where: { id }, data: { status: 'published' } });
+  const denied = await call('chef', path, { method: 'PATCH', data: { available: false } });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.body.error.code, 'FORBIDDEN');
+  assert.equal((await app.prisma.dish.findUnique({ where: { id } })).available, true);
+  assert.equal((await call('chef', path, { method: 'PATCH', data: { available: false, status: 'draft' } })).body.ok, false);
+  // An operational role can change resource state through the existing write API.
+  assert.equal((await call('manager', `/api/dishes/${id}`, { method: 'PATCH', data: { status: 'draft' } })).body.ok, true);
+  await app.prisma.chefDish.delete({ where: { chefId_dishId: { chefId: chefs[0].id, dishId: id } } });
+  assert.equal((await call('chef', path, { method: 'PATCH', data: { available: false } })).status, 403);
+  await app.prisma.chefDish.create({ data: { chefId: chefs[0].id, dishId: id } });
+  assert.equal((await call('chef', path, { method: 'PATCH', data: { available: false } })).status, 200);
+  await app.prisma.dish.update({ where: { id }, data: { available: true } });
+});
+
 test('only admins manage accounts, and concurrent demotions preserve an admin', async () => {
   for (const role of ['manager', 'chef', 'staff', 'customer']) {
     assert.equal((await call(role, `/api/users/${users[role].id}/role`, { method: 'PATCH', data: { role: 'admin' } })).status, 403);
@@ -190,7 +209,7 @@ test('only admins manage accounts, and concurrent demotions preserve an admin', 
   assert.equal((await call('admin', `/api/users/${users.admin.id}/role`, { method: 'PATCH', data: { role: 'staff' } })).status === 200 &&
     (await app.prisma.user.findUnique({ where: { id: users.admin.id } })).role === 'staff', false);
   assert.equal((await app.prisma.user.findUnique({ where: { id: users.admin.id } })).role, 'admin');
-  const secondAdmin = await app.prisma.user.create({ data: { email: 'second-admin@example.test', passwordHash: 'unused', status: 'active', role: 'admin' } });
+  const secondAdmin = await app.prisma.user.create({ data: { email: 'second-admin@example.test', passwordHash: 'unused', status: 'active', emailVerifiedAt: new Date(), role: 'admin' } });
   const secondToken = issuer.issue(secondAdmin.id);
   const [first, second] = await Promise.all([
     call('admin', `/api/users/${secondAdmin.id}/role`, { method: 'PATCH', data: { role: 'staff' } }),

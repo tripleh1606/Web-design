@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { chromium } = require('playwright');
 const { fixture } = require('./helpers');
+const { hashPassword } = require('../api/src/auth/credentials');
 
 test('Week 7 SPA account forms use a new v2 challenge and keep navigation in the browser', async (t) => {
   let otp, resetUrl;
@@ -82,6 +83,7 @@ test('Week 7 SPA account forms use a new v2 challenge and keep navigation in the
   await page.locator('#otp').fill(otp);
   await button('Xác minh OTP').click();
   await heading('Đăng nhập');
+  await app.prisma.user.update({ where: { email }, data: { role: 'admin' } });
   for (let i = 0; i < 3; i++) {
     await fillLogin('incorrect-password');
     await button('Đăng nhập').click();
@@ -91,7 +93,7 @@ test('Week 7 SPA account forms use a new v2 challenge and keep navigation in the
   await fillLogin(password);
   const loginResponse = page.waitForResponse((response) => response.url() === app.apiUrl + '/api/auth/login' && response.status() === 200);
   await button('Đăng nhập').click();
-  await page.waitForURL(origin + '/admin/dishes');
+  await page.waitForURL(origin + '/dishes');
   const { accessToken } = (await (await loginResponse).json()).data;
   const headers = { Authorization: 'Bearer ' + accessToken };
   const dishesApi = app.apiUrl + '/api/dishes';
@@ -120,9 +122,64 @@ test('Week 7 SPA account forms use a new v2 challenge and keep navigation in the
   await heading('Đăng nhập');
   await fillLogin(password + '-updated');
   await button('Đăng nhập').click();
-  await page.waitForURL(origin + '/admin/dishes');
+  await page.waitForURL(origin + '/dishes');
   await page.reload();
-  await heading('Đăng nhập');
+  await page.waitForURL(origin + '/dishes');
+  await link('Đăng xuất').waitFor();
   assert.equal(seen.size, 2);
+  assert.deepEqual(errors, []);
+});
+
+test('SPA enforces current roles and dish state, retains tokens on 403 and clears them on 401', async t => {
+  const app = await fixture({ auth: {} });
+  t.after(() => app.close());
+  const password = 'browser-access-password';
+  const passwordHash = await hashPassword(password);
+  const admin = await app.prisma.user.create({ data: { email: 'admin-browser@example.test', passwordHash, role: 'admin', status: 'active', emailVerifiedAt: new Date() } });
+  const chef = await app.prisma.chef.create({ data: { name: 'Browser chef', specialty: 'Tea' } });
+  const chefUser = await app.prisma.user.create({ data: { email: 'chef-browser@example.test', passwordHash, role: 'chef', chefId: chef.id, status: 'active', emailVerifiedAt: new Date() } });
+  const dish = await app.prisma.dish.create({ data: { name: 'Assigned browser dish', price: 100, chefs: { create: { chefId: chef.id } } } });
+  const origin = await app.startWeb();
+  const browser = await chromium.launch(process.env.BROWSER_EXECUTABLE ? { executablePath: process.env.BROWSER_EXECUTABLE } : { channel: 'chrome' });
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const login = async email => {
+    await page.locator('#email').fill(email);
+    await page.locator('#password').fill(password);
+    await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+    await page.waitForURL(origin + '/dishes');
+  };
+  await page.goto(origin + '/login');
+  await login(admin.email);
+  await page.goto(origin + '/admin/users');
+  await page.getByRole('heading', { name: 'Tài khoản', exact: true }).waitFor();
+  const token = await page.evaluate(() => sessionStorage.getItem('soucha-access-token'));
+  await app.prisma.user.update({ where: { id: admin.id }, data: { role: 'staff' } });
+  const denied = await page.evaluate(async () => {
+    const { request } = await import('/src/api.js');
+    try { await request('users', { paginated: true }); } catch (error) { return error.status; }
+  });
+  assert.equal(denied, 403);
+  await page.getByRole('heading', { name: 'Không có quyền truy cập', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('soucha-access-token')), token);
+  await app.prisma.mfaCredential.create({ data: { userId: admin.id, authVersion: 1 } });
+  await page.evaluate(async () => {
+    const { request } = await import('/src/api.js');
+    try { await request('auth', { path: 'me', collection: false }); } catch { /* The global boundary handles 401. */ }
+  });
+  await page.waitForURL(origin + '/login');
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('soucha-access-token')), null);
+  await login(chefUser.email);
+  await page.goto(origin + '/admin/dishes');
+  await page.getByRole('heading', { name: 'Không có quyền truy cập', exact: true }).waitFor();
+  await page.goto(origin + '/dishes/' + dish.id);
+  const availability = page.getByRole('button', { name: 'Đánh dấu tạm hết', exact: true });
+  await availability.waitFor();
+  await app.prisma.dish.update({ where: { id: dish.id }, data: { status: 'published' } });
+  await availability.click();
+  await page.getByRole('heading', { name: 'Không có quyền truy cập', exact: true }).waitFor();
+  assert.equal((await app.prisma.dish.findUnique({ where: { id: dish.id } })).available, true);
   assert.deepEqual(errors, []);
 });

@@ -64,8 +64,13 @@ function createApp({ prisma, spaOrigin, logger = console, provider = 'postgresql
         Object.keys(req.body).length !== 1 || typeof req.body.available !== 'boolean') {
       return failure(res, 'VALIDATION_FAILED', 'Chỉ nhận trường available kiểu boolean.');
     }
-    const result = await prisma.dish.updateMany({ where: { id, ...scope(req, 'dishes') }, data: { available: req.body.available } });
-    if (!result.count) return notFound(res);
+    const editable = req.auth?.role === 'chef' ? { status: 'draft' } : {};
+    // The write rechecks both the assignment/current account and dish state in SQL.
+    const result = await prisma.dish.updateMany({ where: { id, ...scope(req, 'dishes'), ...editable }, data: { available: req.body.available } });
+    if (!result.count) {
+      if (!await prisma.dish.findUnique({ where: { id }, select: { id: true } })) return notFound(res);
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Không có quyền cập nhật món này.' } });
+    }
     const updated = await prisma.dish.findFirst({ where: { id, ...scope(req, 'dishes') } });
     return updated ? success(res, updated) : notFound(res);
   }));

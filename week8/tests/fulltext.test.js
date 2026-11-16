@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
-const { parsePageQuery, pageQuery } = require('../api/src/pagination');
+const { parsePageQuery, pageQuery, dishPage } = require('../api/src/pagination');
 const { createApp } = require('../api/src/app');
 const { fixture } = require('./helpers');
 const { postgres } = require('./postgres');
@@ -161,6 +161,32 @@ test('smart search tolerates missing middle words, per-word typos and transposit
     if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
     await db.close();
   }
+});
+
+test('smart corrections cross structured filters while respecting customer and chef visibility', async () => {
+  const db = postgres();
+  try {
+    await db.exec(fs.readFileSync(path.join(__dirname, '../api/sql/001-schema.sql'), 'utf8'));
+    await db.query("INSERT INTO chefs (id,name,specialty) VALUES (1,'Assigned','Tea'),(2,'Other','Tea')");
+    await db.query(`INSERT INTO dishes (id,name,description,price,category,available) VALUES
+      (1,'Matcha',NULL,100,'matcha',true),
+      (2,'Bancha',NULL,100,'houjicha',false),
+      (3,'Latte','Matcha',100,'coffee',true)`);
+    await db.query('INSERT INTO chef_dishes ("chefId","dishId") VALUES (1,1),(1,3),(2,2)');
+    const prisma = { $queryRaw: async query => (await db.query(query.text, query.values)).rows };
+    const search = (q, scope, filters = {}) => dishPage(prisma, { ...parsePageQuery({ mode: 'smart', q, ...filters }).value, scope });
+    for (const scope of [{ role: 'customer' }, { role: 'chef', chefId: 1 }]) {
+      const corrected = await search('chatma', scope, { category: 'coffee' });
+      assert.equal(corrected.correctedQuery, 'matcha');
+      assert.deepEqual(corrected.items.map(row => row.id), [3]);
+      const hidden = await search('chanba', scope);
+      assert.equal(hidden.correctedQuery, undefined);
+      assert.equal(hidden.total, 0);
+    }
+    const admin = await search('chanba', { role: 'admin' });
+    assert.equal(admin.correctedQuery, 'bancha');
+    assert.equal(admin.items[0].id, 2);
+  } finally { await db.close(); }
 });
 
 test('PostgreSQL fulltext searches name+description, ranks stably, paginates and preserves AND filters', async () => {

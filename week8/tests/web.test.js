@@ -9,7 +9,7 @@ test('SPA server supports every deep link, reload, assets and public-only API co
   await once(server, 'listening');
   try {
     const origin = 'http://localhost:' + server.address().port;
-    const routes = ['/dishes', '/dishes/1', '/abc', '/login', '/register', '/activate', '/forgot', '/reset', '/logout/confirm'];
+    const routes = ['/dishes', '/dishes/1', '/abc', '/login', '/register', '/activate', '/forgot', '/reset', '/mfa', '/account/security', '/admin/users', '/admin/authorization', '/logout/confirm'];
     for (const resource of ['dishes', 'chefs', 'ingredients']) routes.push(`/admin/${resource}`, `/admin/${resource}/new`, `/admin/${resource}/1/edit`, `/admin/${resource}/1/delete`);
     for (const route of routes) {
       const response = await fetch(origin + route);

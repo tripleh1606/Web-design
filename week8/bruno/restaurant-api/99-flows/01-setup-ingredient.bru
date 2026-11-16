@@ -1,0 +1,42 @@
+meta {
+  name: Setup create test ingredient
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  const stamp = Date.now();
+  bru.setVar("brunoStamp", String(stamp));
+  req.setBody(JSON.stringify({
+    name: `bruno-contract-ing-${stamp}`,
+    unit: "g",
+    stock: 100
+  }));
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body.ok && body.data?.id) {
+    bru.setEnvVar("testIngredientId", String(body.data.id));
+    bru.setEnvVar("ingredientId", String(body.data.id));
+  }
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("create test ingredient", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.id).to.be.a("number");
+  });
+}

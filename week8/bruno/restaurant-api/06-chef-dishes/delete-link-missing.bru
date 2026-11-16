@@ -1,0 +1,22 @@
+meta {
+  name: DELETE assign link NOT_FOUND
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}/dishes/999999
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing assignment NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

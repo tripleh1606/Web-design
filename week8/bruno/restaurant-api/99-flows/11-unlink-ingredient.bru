@@ -1,0 +1,23 @@
+meta {
+  name: Flow unlink recipe ingredient
+  type: http
+  seq: 11
+}
+
+delete {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}/ingredients/{{testIngredientId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("unlink ingredient", function() {
+    const body = expectOk(res, expect);
+    expect(body.data).to.equal(null);
+  });
+}

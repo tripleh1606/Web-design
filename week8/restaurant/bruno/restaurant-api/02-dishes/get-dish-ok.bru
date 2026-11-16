@@ -1,0 +1,23 @@
+meta {
+  name: GET /api/dishes/:id ok
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("seed dish found", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.id).to.equal(Number(bru.getEnvVar("seedDishId")));
+  });
+}

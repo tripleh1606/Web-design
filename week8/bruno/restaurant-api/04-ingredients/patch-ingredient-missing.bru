@@ -1,0 +1,29 @@
+meta {
+  name: PATCH /api/ingredients/999999 NOT_FOUND
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/api/ingredients/999999
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "stock": 8
+  }
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("patch missing NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

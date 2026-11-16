@@ -1,0 +1,29 @@
+meta {
+  name: Flow assign dish to chef
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/chefs/{{testChefId}}/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  req.setBody(JSON.stringify({
+    dishId: Number(bru.getEnvVar("testDishId"))
+  }));
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("assign dish ok", function() {
+    expectOk(res, expect);
+  });
+}

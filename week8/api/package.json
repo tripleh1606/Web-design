@@ -1,0 +1,30 @@
+{
+  "name": "@soucha/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:generate": "node ../scripts/database.js generate",
+    "db:push": "node ../scripts/database.js push",
+    "db:search-setup": "node ../scripts/database.js search",
+    "db:seed": "node ../scripts/database.js seed",
+    "db:seed:auth": "node prisma/seed-auth.js",
+    "db:clean:sessions": "node prisma/clean-sessions.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "6.12.0",
+    "argon2": "0.44.0",
+    "dotenv": "16.6.1",
+    "express": "4.21.2",
+    "jsonwebtoken": "9.0.3",
+    "nodemailer": "10.3.1",
+    "validator": "13.15.23"
+  },
+  "devDependencies": {
+    "prisma": "6.12.0"
+  }
+}

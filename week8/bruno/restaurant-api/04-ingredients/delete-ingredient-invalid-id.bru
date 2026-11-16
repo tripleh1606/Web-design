@@ -1,0 +1,22 @@
+meta {
+  name: DELETE /api/ingredients/0 NOT_FOUND
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/api/ingredients/0
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("zero id NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

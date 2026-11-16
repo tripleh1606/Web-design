@@ -1,0 +1,29 @@
+meta {
+  name: POST assign invalid dishId
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "dishId": 0
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("invalid dishId VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["dishId"]);
+  });
+}

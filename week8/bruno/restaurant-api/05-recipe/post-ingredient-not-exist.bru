@@ -1,0 +1,31 @@
+meta {
+  name: POST recipe missing ingredient FK
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ingredientId": 999999,
+    "amount": 10
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("unknown ingredient VALIDATION_FAILED", function() {
+    const body = expectValidation(res, expect, ["ingredientId"]);
+    expect(body.error.fields.ingredientId).to.match(/không tồn tại/i);
+  });
+}

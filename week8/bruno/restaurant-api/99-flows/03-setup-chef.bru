@@ -1,0 +1,40 @@
+meta {
+  name: Setup create test chef
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/chefs
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  const stamp = bru.getVar("brunoStamp") || String(Date.now());
+  req.setBody(JSON.stringify({
+    name: `bruno-contract-chef-${stamp}`,
+    specialty: "Bruno test"
+  }));
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body.ok && body.data?.id) {
+    bru.setEnvVar("testChefId", String(body.data.id));
+    bru.setEnvVar("chefId", String(body.data.id));
+  }
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("create test chef", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.name).to.match(/^bruno-contract-chef-/);
+  });
+}

@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "name": "Restaurant API",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"],
+  "scripts": {
+    "filesystemAccess": {
+      "allow": true
+    },
+    "moduleWhitelist": [],
+    "additionalContextRoots": ["."]
+  }
+}

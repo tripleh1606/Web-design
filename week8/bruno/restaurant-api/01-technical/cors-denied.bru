@@ -1,0 +1,31 @@
+meta {
+  name: POST with wrong Origin HTTP 403
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: https://foreign.example
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Forbidden Origin",
+    "price": 1000
+  }
+}
+
+tests {
+  const { expectTechnical } = require("./js/contract");
+  test("403 origin denied, no ACAO", function() {
+    expectTechnical(res, expect, 403);
+    expect(res.getHeader("access-control-allow-origin")).to.equal(undefined);
+  });
+}

@@ -1,0 +1,29 @@
+meta {
+  name: PATCH recipe link NOT_FOUND
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/ingredients/999999
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 20
+  }
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing link NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

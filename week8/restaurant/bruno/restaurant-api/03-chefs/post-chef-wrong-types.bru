@@ -1,0 +1,30 @@
+meta {
+  name: POST /api/chefs wrong types
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/chefs
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": 123,
+    "specialty": true
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("wrong types VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["name", "specialty"]);
+  });
+}

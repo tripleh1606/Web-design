@@ -1,0 +1,23 @@
+meta {
+  name: GET /api/dishes/:id/ingredients ok
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dishes/{{seedDishId}}/ingredients
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("recipe lines are array", function() {
+    const body = expectOk(res, expect);
+    expect(Array.isArray(body.data)).to.equal(true);
+  });
+}

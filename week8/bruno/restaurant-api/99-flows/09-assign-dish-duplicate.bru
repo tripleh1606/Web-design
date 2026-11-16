@@ -1,0 +1,30 @@
+meta {
+  name: Flow duplicate assign VALIDATION
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/chefs/{{testChefId}}/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+script:pre-request {
+  req.setBody(JSON.stringify({
+    dishId: Number(bru.getEnvVar("testDishId"))
+  }));
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("duplicate assign VALIDATION_FAILED", function() {
+    const body = expectValidation(res, expect, ["dishId"]);
+    expect(body.error.fields.dishId).to.match(/đã được gán/i);
+  });
+}

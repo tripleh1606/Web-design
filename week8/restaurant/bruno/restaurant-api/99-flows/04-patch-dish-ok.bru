@@ -1,0 +1,30 @@
+meta {
+  name: Flow PATCH test dish price
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "price": 30000
+  }
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("partial patch updates price", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.price).to.equal(30000);
+  });
+}

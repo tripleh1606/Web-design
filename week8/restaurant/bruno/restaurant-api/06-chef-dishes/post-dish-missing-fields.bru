@@ -1,0 +1,27 @@
+meta {
+  name: POST assign missing dishId
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/chefs/{{seedChefId}}/dishes
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("missing dishId VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["dishId"]);
+  });
+}

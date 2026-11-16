@@ -1,0 +1,30 @@
+meta {
+  name: Flow PATCH recipe amount
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/dishes/{{testDishId}}/ingredients/{{testIngredientId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 20
+  }
+}
+
+tests {
+  const { expectOk } = require("./js/contract");
+  test("update recipe amount", function() {
+    const body = expectOk(res, expect);
+    expect(body.data.amount).to.equal(20);
+  });
+}

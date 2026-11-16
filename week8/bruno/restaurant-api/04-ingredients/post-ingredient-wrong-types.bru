@@ -1,0 +1,31 @@
+meta {
+  name: POST /api/ingredients wrong types
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/ingredients
+  body: json
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Rau",
+    "unit": "kg",
+    "stock": "12"
+  }
+}
+
+tests {
+  const { expectValidation } = require("./js/contract");
+  test("stock string VALIDATION_FAILED", function() {
+    expectValidation(res, expect, ["stock"]);
+  });
+}

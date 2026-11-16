@@ -1,0 +1,22 @@
+meta {
+  name: GET unknown route HTTP 404
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/bok
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectPlain } = require("./js/contract");
+  test("404 plain without ok envelope", function() {
+    expectPlain(res, expect, 404);
+  });
+}

@@ -1,0 +1,22 @@
+meta {
+  name: GET /api/chefs/999999 NOT_FOUND
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/chefs/999999
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: {{corsOrigin}}
+}
+
+tests {
+  const { expectNotFound } = require("./js/contract");
+  test("missing chef NOT_FOUND", function() {
+    expectNotFound(res, expect);
+  });
+}

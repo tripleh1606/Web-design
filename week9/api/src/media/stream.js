@@ -12,20 +12,25 @@ export function createMediaHandler({ repository, storage }) {
       return;
     }
     try {
-      await withStorageLock(repository, async () => {
+      const object = await withStorageLock(repository, async () => {
         const variant = await repository.findPublishedVariant(req.params.id, Number(widthText));
-        if (!variant) { res.status(404).end(); return; }
+        if (!variant) return null;
+        // Acquire the object while deletion is excluded. The returned stream
+        // must remain readable after the key is deleted from storage.
         const object = await storage.get(variant.key);
         if (!object.body || object.contentType !== 'image/webp' || variant.mime !== 'image/webp' || !Number.isSafeInteger(object.length) || object.length !== variant.bytes || !object.etag) {
           object.body?.destroy?.();
           throw new Error('Invalid storage object metadata');
         }
-        res.setHeader('Content-Type', 'image/webp');
-        res.setHeader('Content-Length', String(object.length));
-        res.setHeader('ETag', object.etag);
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        await pipeline(object.body, res);
+        return object;
       });
+      if (!object) { res.status(404).end(); return; }
+      if (res.destroyed) { object.body.destroy?.(); return; }
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('Content-Length', String(object.length));
+      res.setHeader('ETag', object.etag);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      await pipeline(object.body, res);
     } catch {
       if (res.headersSent || res.destroyed) { res.destroy(); return; }
       res.removeHeader('Content-Length');

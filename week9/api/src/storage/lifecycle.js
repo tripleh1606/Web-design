@@ -16,7 +16,7 @@ export function withStorageLock(repository, fn) {
 Repository contract (all methods must be backed by durable DB transactions):
 
 withLock(fn): hold a crash-releasing exclusive lock until fn settles. All
-  publication, deletion, recovery and media must use the same lock.
+  publication, deletion, recovery and media object acquisition use the same lock.
 
 createUploadManifest({ id, photoId, keys }): commit the complete key list before
   returning; id is a unique job ID. Throw on any conflict or failed commit.

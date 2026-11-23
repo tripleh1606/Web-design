@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable, Writable } from 'node:stream';
 import { createMediaHandler } from '../../api/src/media/stream.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createSqliteRepository } from '../../api/src/storage/sqlite-repository.js';
+import { createStorageLifecycle } from '../../api/src/storage/lifecycle.js';
 
 function response() {
   const chunks = [], headers = new Map();
@@ -35,4 +40,56 @@ test('published media streams with object headers', async () => {
   assert.equal(res.headers.get('etag'), '"etag"');
   assert.equal(res.headers.get('content-type'), 'image/webp');
   assert.equal(res.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+});
+
+test('deletion waits for object acquisition but not a stalled client', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gallery-media-'));
+  const repository = createSqliteRepository(join(dir, 'gallery.sqlite'));
+  let releaseGet, getStarted;
+  const started = new Promise(resolve => { getStarted = resolve; });
+  const acquired = new Promise(resolve => { releaseGet = resolve; });
+  const body = new Readable({ read() {} });
+  const storage = {
+    async get() {
+      getStarted();
+      await acquired;
+      return { body, length: 3, etag: '"etag"', contentType: 'image/webp' };
+    },
+    async delete() {},
+  };
+  const lifecycle = createStorageLifecycle({ repository, storage });
+  const res = response();
+  let stream, deletion;
+  try {
+    await repository.withLock(async () => {
+      repository.publishPhoto({ id: 'photo', title: 't', alt: 'a', width: 320, height: 200, variants: [{ width: 320, height: 200, bytes: 3, mime: 'image/webp', key: 'key' }] });
+    });
+    const handler = createMediaHandler({ repository, storage });
+    stream = handler({ params: { id: 'photo', width: '320' } }, res);
+    await started;
+    let deleted = false;
+    deletion = lifecycle.deletePhoto('photo').then(result => { deleted = true; return result; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(deleted, false);
+    releaseGet();
+    const result = await Promise.race([deletion, new Promise(resolve => setImmediate(() => resolve('blocked')))]);
+    assert.deepEqual(result, { found: true, pending: false });
+    assert.deepEqual(await Promise.race([
+      lifecycle.recover(),
+      new Promise(resolve => setImmediate(() => resolve('blocked'))),
+    ]), []);
+    const missing = response();
+    await handler({ params: { id: 'photo', width: '320' } }, missing);
+    assert.equal(missing.statusCode, 404);
+    body.push('abc');
+    body.push(null);
+    await stream;
+    assert.equal(Buffer.concat(res.chunks).toString(), 'abc');
+  } finally {
+    releaseGet();
+    body.destroy();
+    await Promise.allSettled([stream, deletion].filter(Boolean));
+    repository.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

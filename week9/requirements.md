@@ -233,18 +233,20 @@ Mỗi người triển khai, kiểm thử và viết hướng dẫn cho phần m
 
 **Sở hữu:** entry point/config backend, `api/prisma/`, module database, phiên quản lý, routes danh sách/chi tiết/DELETE và scripts/dependency chung.
 
-- [ ] Khởi tạo ứng dụng Express độc lập trong `week9/`, cấu hình môi trường và lệnh chạy.
-- [ ] Tạo schema/migration cho Photo, PhotoVariant và trạng thái cleanup; DB lưu bền, không lưu bytes ảnh.
-- [ ] Chốt schema API, pagination, lỗi, multipart metadata và các interface tích hợp với ba người còn lại.
-- [ ] Xây phiên quản lý bằng capability, cookie an toàn, đăng xuất và kiểm tra quyền/Origin.
-- [ ] Xây GET danh sách và chi tiết; chỉ trả ảnh đã công bố.
-- [ ] Xây service transaction công bố Photo/variants sau khi storage đã ghi đủ.
-- [ ] Xây DELETE: transaction ẩn ảnh và giữ key cần dọn; chỉ hoàn tất metadata khi cleanup thành công.
-- [ ] Phối hợp Người 3 chốt manifest/recovery, không tạo hai cơ chế cleanup cạnh tranh.
-- [ ] Kiểm chứng public không ghi được, DB lỗi không công bố ảnh và recovery không xóa ảnh đã commit.
-- [ ] Tích hợp backend, scripts và README tổng hợp.
+- [x] Khởi tạo ứng dụng Express độc lập trong `week9/`, cấu hình môi trường và lệnh chạy.
+- [x] Tạo schema/migration cho Photo, PhotoVariant và trạng thái cleanup; DB lưu bền, không lưu bytes ảnh.
+- [x] Chốt schema API, pagination, lỗi, multipart metadata và các interface tích hợp với ba người còn lại.
+- [x] Xây phiên quản lý bằng capability, cookie an toàn, đăng xuất và kiểm tra quyền/Origin.
+- [x] Xây GET danh sách và chi tiết; chỉ trả ảnh đã công bố.
+- [x] Xây service transaction công bố Photo/variants sau khi storage đã ghi đủ.
+- [x] Xây DELETE: transaction ẩn ảnh và giữ key cần dọn; chỉ hoàn tất metadata khi cleanup thành công.
+- [x] Phối hợp Người 3 chốt manifest/recovery, không tạo hai cơ chế cleanup cạnh tranh.
+- [x] Kiểm chứng public không ghi được, DB lỗi không công bố ảnh và recovery không xóa ảnh đã commit.
+- [x] Tích hợp backend, scripts và README tổng hợp.
 
 **Bàn giao:** migration, API metadata/quản lý, interface transaction, hướng dẫn cấu hình và bằng chứng DB/quyền truy cập.
+
+Triển khai và cách chạy: `README.md`; contract: `docs/api.md`; kiểm thử DB/HTTP/quyền/recovery: `tests/backend/`. Các test này dùng SQLite thật và storage thay thế để gây lỗi có kiểm soát; chưa thay cho nghiệm thu SeaweedFS thật hoặc pipeline upload của Người 2.
 
 ### Phần 2 — Người 2: Upload, kiểm tra và xử lý ảnh
 

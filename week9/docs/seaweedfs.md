@@ -1,5 +1,7 @@
 # SeaweedFS S3: triển khai và tích hợp
 
+**Cập nhật tích hợp Người 1:** entrypoint Express, Prisma repository, media/DELETE và worker recovery hiện đã nối tại `api/src/server.js` và `api/src/runtime.js`. Dùng [README chung](../README.md) để cấu hình `.env`, migrate và chạy; [contract API](api.md) mô tả interface. Những ví dụ wiring và ghi chú chưa có backend bên dưới là ngữ cảnh lúc bàn giao module storage. Server hiện dùng Prisma với cùng bảng/job và file khóa của adapter SQLite, không mở database thứ hai. Pipeline upload Người 2 vẫn chưa được tích hợp; chưa có kiểm chứng SeaweedFS end-to-end mới trên máy này.
+
 Cấu hình trong `infra/seaweedfs/` chạy một master, volume server, filer và S3 gateway trong một container. `/data` là Docker named volume chứa cả volume data, master metadata và LevelDB2 của filer; `filer.toml` được mount read-only. Đây là cấu hình một máy cho phát triển/triển khai nhỏ, không phải HA hay backup; mất host hoặc volume có thể mất dữ liệu. Chỉ S3 port 8333 được publish trên loopback host; không mở master, volume hay filer ra mạng công cộng. Image được ghim ở `chrislusf/seaweedfs:4.53`.
 
 ## Tạo credential và khởi động
@@ -112,7 +114,7 @@ if (failures.length) throw new Error(`Recovery failed for ${failures.length} job
 // On shutdown after requests/jobs drain: storage.close(); repository.close();
 ```
 
-**Tích hợp ứng dụng chưa hoàn tất:** chưa có wiring khởi động, route upload/delete/media, xác thực hoặc worker recovery được nối với các module này. Backend phải cung cấp chúng, chạy recovery trước traffic, xử lý lỗi và retry job tồn đọng bằng cùng repository/lock. Không giả định các route hay lệnh worker đã tồn tại; duy trì một cơ chế manifest/cleanup duy nhất.
+**Tích hợp hiện tại:** Người 1 đã nối entrypoint, route DELETE/media, phiên quản lý và worker recovery bằng repository Prisma cùng bảng/khóa. `npm start` chạy recovery trước traffic rồi retry định kỳ; `npm run cleanup` chạy một lượt. Pipeline upload Người 2 và kiểm chứng SeaweedFS end-to-end vẫn chưa hoàn tất. Duy trì một cơ chế manifest/cleanup duy nhất theo [contract API](api.md).
 
 **Giới hạn PUT hoàn tất muộn:** nếu PUT báo lỗi hoặc process chết trong khi request vẫn đang được gateway xử lý, cleanup có thể DELETE trước khi PUT đó hoàn tất; object có thể xuất hiện lại sau cleanup, kể cả khi manifest đã bị xóa. Lock SQLite không điều khiển request đã rời process và recovery không bảo đảm phát hiện orphan này. Không tái sử dụng key; vận hành cần đối chiếu object với DB sau khi các request cũ chắc chắn đã kết thúc, và chỉ xử lý orphan với quy trình an toàn khi mọi writer đã dừng. Không coi recovery là bảo đảm không có orphan.
 

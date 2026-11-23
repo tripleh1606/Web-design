@@ -1,0 +1,19 @@
+{
+  "name": "week9-photo-gallery",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["api", "web"],
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "dev": "npm run dev --workspace @gallery/api",
+    "start": "npm run start --workspace @gallery/api",
+    "dev:web": "npm run dev --workspace week9-postage-web",
+    "db:generate": "node scripts/database.mjs generate",
+    "db:migrate": "node scripts/database.mjs dev",
+    "db:deploy": "node scripts/database.mjs deploy",
+    "cleanup": "npm run cleanup --workspace @gallery/api",
+    "test": "node --test tests/backend/*.test.mjs tests/storage/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  }
+}

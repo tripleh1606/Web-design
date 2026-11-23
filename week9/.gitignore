@@ -1,0 +1,9 @@
+.env*
+!.env.example
+data/
+staging/
+*.sqlite*
+*.db*
+*.lock
+!package-lock.json
+infra/seaweedfs/secrets/

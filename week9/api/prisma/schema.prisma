@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// false means hidden while delete cleanup is pending.
+model Photo {
+  id        String         @id
+  title     String
+  alt       String
+  width     Int
+  height    Int
+  published Boolean
+  createdAt String         @default(dbgenerated("(strftime('%Y-%m-%dT%H:%M:%fZ','now'))")) @map("created_at")
+  variants  PhotoVariant[]
+
+  @@index([published, createdAt, id])
+  @@map("photos")
+}
+
+model PhotoVariant {
+  photoId String @map("photo_id")
+  width   Int
+  height  Int
+  bytes   Int
+  mime    String
+  key     String @unique @map("storage_key")
+  photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@id([photoId, width])
+  @@map("photo_variants")
+}
+
+// Presence means pending. No FK: an upload manifest precedes the Photo.
+model CleanupJob {
+  id       String @id
+  photoId  String @map("photo_id")
+  kind     String
+  keysJson String @map("keys_json")
+
+  @@unique([photoId, kind])
+  @@map("cleanup_jobs")
+}
+
+model ManagerSession {
+  tokenHash String   @id @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("manager_sessions")
+}

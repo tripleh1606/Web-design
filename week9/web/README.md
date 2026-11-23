@@ -1,5 +1,7 @@
 # POSTAGE — Frontend Week 9
 
+Backend Người 1 đã được tích hợp để phục vụ frontend cùng origin; xem [README chung](../README.md) và [contract API](../docs/api.md) để chạy hiện tại. Các ghi chú kiểm thử bên dưới mô tả thời điểm bàn giao frontend; pipeline upload Người 2 vẫn chưa có.
+
 Phần Người 4: Gallery responsive, chi tiết, upload, UI quản lý/xóa, chia sẻ và StampPhoto. JavaScript modules và CSS thuần, không dependency frontend, không editor ảnh.
 
 ## Chạy
@@ -27,9 +29,9 @@ Nếu backend chưa chạy, giao diện báo lỗi kết nối và có nút th�
 
 Capability không lưu vào URL, localStorage hoặc sessionStorage. Cookie phiên do backend thiết lập. Preview dùng object URL và được revoke khi chọn lại, rời trang hoặc xử lý upload xong. Không tự retry thao tác ghi khi mất kết nối vì server có thể đã xử lý.
 
-## Hợp đồng API cần thống nhất với Người 1–3
+## Hợp đồng API
 
-Đây là contract frontend đang gọi, không phải khẳng định backend đã triển khai. Response JSON, trừ POST/DELETE phiên trả 204. Lỗi: `{ "error": { "code": "...", "message": "..." } }` với HTTP status phù hợp.
+Đây là contract frontend đang gọi; backend Người 1 đã triển khai phần metadata, phiên và DELETE. Upload chờ pipeline Người 2. Response JSON, trừ POST/DELETE phiên trả 204. Lỗi: `{ "error": { "code": "...", "message": "..." } }` với HTTP status phù hợp.
 
 ### Photo
 
@@ -41,9 +43,9 @@ Capability không lưu vào URL, localStorage hoặc sessionStorage. Cookie phi�
   "width": 1800,
   "height": 1200,
   "variants": [
-    { "url": "/media/photos/id/320.webp", "width": 320, "height": 213 },
-    { "url": "/media/photos/id/960.webp", "width": 960, "height": 640 },
-    { "url": "/media/photos/id/1600.webp", "width": 1600, "height": 1067 }
+    { "url": "/media/id/320.webp", "width": 320, "height": 213 },
+    { "url": "/media/id/960.webp", "width": 960, "height": 640 },
+    { "url": "/media/id/1600.webp", "width": 1600, "height": 1067 }
   ]
 }
 ```
@@ -60,7 +62,7 @@ Kích thước Photo là tỷ lệ nguồn đã chuẩn hóa; variant ghi kích 
 | `POST /api/photos` | Multipart; JSON `{results: [...]}` |
 | `DELETE /api/photos/:id` | 200 `{id, cleanup: "complete"}` hoặc 202 `{id, cleanup: "pending"}` |
 
-**GET phiên là bổ sung cần Người 1 triển khai** để frontend biết quyền sau reload mà không lưu mã quản lý. Public vẫn xem được chi tiết khi API phiên lỗi; thao tác quản lý không được mở khi chưa xác nhận phiên.
+**GET phiên đã được Người 1 triển khai** để frontend biết quyền sau reload mà không lưu mã quản lý. Public vẫn xem được chi tiết khi API phiên lỗi; thao tác quản lý không được mở khi chưa xác nhận phiên.
 
 Upload:
 
@@ -115,4 +117,4 @@ Bốn radial-gradient mask giao nhau tạo lỗ trong suốt bốn cạnh. Paddi
 - Screenshot xác nhận lỗ tem bốn cạnh và ảnh giữ tỷ lệ; kiểm DOM có mask, padding 20px, srcset và currentSrc. Viewport 320px không tràn ngang; phiên kiểm thử không có JavaScript error.
 - Dữ liệu contract test không được lưu trong app, không chứng minh xác thực/lưu/xóa thật.
 
-**Chưa nghiệm thu end-to-end:** backend và SeaweedFS chưa được triển khai trong workspace khi làm frontend. Cần Người 1–3 cung cấp API trên, rồi kiểm lại phiên/cookie thật, upload/variant, phân trang, quyền, media headers, persistence và cleanup với storage thật theo `../requirements.md`. Không đánh dấu các tiêu chí tích hợp đó đã hoàn thành.
+**Chưa nghiệm thu end-to-end:** backend metadata/phiên/DELETE/media đã nối, còn pipeline upload và kiểm chứng browser cùng SeaweedFS thật. Cần kiểm lại phiên/cookie, upload/variant, phân trang, quyền, media headers, persistence và cleanup với storage thật theo `../requirements.md`. Các kiểm thử HTTP/SQLite của Người 1 không thay cho nghiệm thu tích hợp browser/storage.

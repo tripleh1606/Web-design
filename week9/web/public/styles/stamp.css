@@ -1,0 +1,63 @@
+.stamp-photo {
+  --_stamp-border: clamp(0px, var(--stamp-border, 20px), 4rem);
+  --_stamp-hole-radius: clamp(0px, var(--stamp-hole-radius, 5px), min(2rem, var(--_stamp-border)));
+  --_stamp-hole-spacing: clamp(calc(var(--_stamp-hole-radius) * 2 + 2px), var(--stamp-hole-spacing, 22px), 8rem);
+  --_stamp-hole-inner: max(0px, calc(var(--_stamp-hole-radius) - 0.5px));
+
+  box-sizing: border-box;
+  display: block;
+  width: min(100%, max(0px, var(--stamp-width, 100%)));
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: var(--_stamp-border);
+  background: var(--stamp-paper, #fffdf5);
+}
+
+.stamp-photo__image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+.stamp-photo__error {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  min-height: 8rem;
+  margin: 0;
+  padding: 1.5rem 1rem;
+  color: #34404c;
+  font: inherit;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.stamp-photo > [hidden] {
+  display: none;
+}
+
+/* Each full-size layer removes one edge's holes; intersection preserves all four.
+   Without compositing support, the unmasked, uniformly colored paper remains. */
+@supports ((mask-image: radial-gradient(circle, transparent, #000)) and (mask-composite: intersect)) or ((-webkit-mask-image: radial-gradient(circle, transparent, #000)) and (-webkit-mask-composite: source-in)) {
+  .stamp-photo {
+    --_stamp-mask: radial-gradient(circle at 50% 0, transparent var(--_stamp-hole-inner), #000 var(--_stamp-hole-radius)),
+      radial-gradient(circle at 50% 100%, transparent var(--_stamp-hole-inner), #000 var(--_stamp-hole-radius)),
+      radial-gradient(circle at 0 50%, transparent var(--_stamp-hole-inner), #000 var(--_stamp-hole-radius)),
+      radial-gradient(circle at 100% 50%, transparent var(--_stamp-hole-inner), #000 var(--_stamp-hole-radius));
+    --_stamp-mask-size: var(--_stamp-hole-spacing) 100%, var(--_stamp-hole-spacing) 100%, 100% var(--_stamp-hole-spacing), 100% var(--_stamp-hole-spacing);
+
+    -webkit-mask-image: var(--_stamp-mask);
+    -webkit-mask-size: var(--_stamp-mask-size);
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    -webkit-mask-composite: source-in;
+    mask-image: var(--_stamp-mask);
+    mask-size: var(--_stamp-mask-size);
+    mask-position: center;
+    mask-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    mask-composite: intersect;
+  }
+}

@@ -6,6 +6,8 @@ Cấu hình trong `infra/seaweedfs/` chạy một master, volume server, filer v
 
 Cần Docker Compose, Python 3 và AWS CLI. Ví dụ tạo hai identity ngẫu nhiên ở **ngoài repository**, với quyền file chỉ cho user hiện tại. Không commit, gửi browser, đưa vào log hoặc chia sẻ file này. Identity `bootstrap` có quyền quản trị để tạo bucket; `gallery` chỉ có Read/Write/List cho bucket `gallery-photos`, không có Admin hay anonymous identity. Write bao gồm PUT và DELETE; quyền theo bucket không cách ly riêng prefix. Dành riêng bucket này cho ứng dụng và không thêm bucket policy public. Lệnh dưới sẽ từ chối ghi đè file hiện có.
 
+Chạy các lệnh từ thư mục gốc repository; cần Docker Engine đang chạy, plugin `docker compose`, Python 3 và AWS CLI (`docker compose version`, `python3 --version`, `aws --version`). Cổng loopback 8333 phải còn trống. Compose đọc `SEAWEED_S3_CONFIG` từ shell mỗi lần chạy, kể cả khi xem log hoặc dừng dịch vụ; export lại đường dẫn nếu mở shell mới. Kiểm tra thư mục cấu hình là của user tin cậy và không dùng chung tài khoản.
+
 ```sh
 mkdir -p "$HOME/.config/gallery-seaweedfs"
 chmod 700 "$HOME/.config/gallery-seaweedfs"
@@ -43,12 +45,28 @@ AWS_PROFILE=bootstrap AWS_DEFAULT_REGION=us-east-1 aws --endpoint-url http://127
 
 Nếu bucket đã tồn tại, không tạo lại hoặc xóa dữ liệu; kiểm tra bằng `head-bucket`. Nếu gateway chưa sẵn sàng, xem `docker compose -f infra/seaweedfs/compose.yaml logs seaweedfs` rồi thử lại. Cất credential bootstrap riêng và không cấp cho backend; hạn chế quyền đọc file credential, xoay credential khi lộ. Sau khi sửa file S3 config, restart container để nạp lại. Không dùng `docker compose down -v` nếu muốn giữ dữ liệu.
 
+Kiểm tra bucket bằng `AWS_PROFILE=bootstrap AWS_DEFAULT_REGION=us-east-1 aws --endpoint-url http://127.0.0.1:8333 s3api head-bucket --bucket gallery-photos`. Lỗi cũng có thể do gateway chưa sẵn sàng hoặc sai quyền, không tự suy ra bucket đã tồn tại. Kiểm tra cấu hình đã resolve mà không in nội dung secret bằng `docker compose -f infra/seaweedfs/compose.yaml config --quiet`.
+
+Khi ngừng dịch vụ, dùng `docker compose -f infra/seaweedfs/compose.yaml down` (không có `-v`); named volume vẫn tồn tại và `up -d` sẽ dùng lại. `restart` hoặc `down` không phải backup; xóa volume sẽ xóa dữ liệu. Đường dẫn secret phải vẫn tồn tại khi khởi động lại.
+
 ## Hợp đồng kết nối backend
 
 - Endpoint từ backend chạy trên host: `http://127.0.0.1:8333`; region ký request `us-east-1`; bucket `gallery-photos`; path-style **true**. Nếu backend ở container khác, loopback trỏ vào chính container đó: cần đưa hai service vào mạng Docker riêng, dùng tên service/endpoint phù hợp và không publish các cổng nội bộ ra ngoài.
 - HTTP ở đây chỉ dành cho cùng máy/mạng tin cậy. Với lưu lượng qua mạng không tin cậy, dùng HTTPS với chứng chỉ hợp lệ và xác thực gateway/reverse proxy; cấu hình endpoint `https://...`, xác minh CA/hostname và hạn chế network access. Không tắt kiểm tra TLS. Không đưa S3 endpoint hay credential cho browser.
 - `api/src/storage/s3.js` export `createS3Storage({ endpoint, region, bucket, forcePathStyle, credentials: { accessKeyId, secretAccessKey } })`; backend phải tự lấy cấu hình bí mật từ môi trường/secret manager. Module không tự đọc biến môi trường. Nó cần `@aws-sdk/client-s3` và trả `put(key, variant)` (`variant.path`, `variant.bytes`), `get(key)`, `head(key)`, `delete(key)`, `close()`. `get`/`head` trả metadata length, etag, contentType; `get` thêm stream body. Bucket phải được tạo trước. Không fallback sang local storage khi gateway lỗi.
 - Storage key do server tạo, dự kiến `photos/<photoId>/<width>.webp`; không dùng filename, key hoặc đường dẫn tùy ý từ client. Không ghi đè key/URL đã công bố. Backend kiểm tra Photo đã công bố trong DB trước khi stream media, đặt WebP, length/ETag thực và cache immutable chỉ cho response thành công. Xóa origin không thu hồi bản đã tải hoặc còn trong cache.
+
+Ví dụ cấp cấu hình cho tiến trình backend chạy trên host, trong shell riêng và không bật `set -x`. Các biến này chỉ là input cho đoạn wiring minh họa bên dưới, **không** tự kích hoạt backend hay được module storage tự đọc:
+
+```sh
+export S3_ENDPOINT=http://127.0.0.1:8333
+export S3_ACCESS_KEY_ID="$(aws configure get aws_access_key_id --profile gallery)"
+export S3_SECRET_ACCESS_KEY="$(aws configure get aws_secret_access_key --profile gallery)"
+export GALLERY_DB_PATH="$HOME/.local/share/gallery/gallery.sqlite"
+mkdir -p "$(dirname "$GALLERY_DB_PATH")"
+```
+
+Lệnh `aws configure get` dùng `AWS_SHARED_CREDENTIALS_FILE` đã export ở trên; kiểm tra biến đó khi mở shell mới. Không in hoặc commit các biến bí mật; môi trường tiến trình có thể bị đọc bởi user/process có quyền, nên production cần secret manager và phân quyền phù hợp. Chạy tiến trình backend từ shell này sau khi ứng dụng đã triển khai wiring; khi xong có thể `unset S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY`.
 
 `api/src/storage/sqlite-repository.js` export `createSqliteRepository(absoluteDbPath)` (Node >= 22.13). File DB phải là đường dẫn tuyệt đối, persistent; DB và file khóa `<đường dẫn DB canonical>.lock` phải trên filesystem local bền vững. Mọi process phải chạy trên cùng host và dùng cùng DB canonical **và cùng file khóa**; không dùng bản sao, đường dẫn lock khác, filesystem chia sẻ đa host, hay truy cập bảng/object ngoài protocol. Không xóa, thay thế hoặc di chuyển file lock khi process đang chạy.
 
@@ -106,5 +124,23 @@ curl -i http://127.0.0.1:8333/gallery-photos/photos/PHOTO_ID/WIDTH.webp
 ```
 
 Đối chiếu object/HEAD với PhotoVariant trong DB và response media của ứng dụng; kiểm tra PUT, GET, HEAD, DELETE bằng object thử riêng rồi xóa nó. Sau restart `docker compose -f infra/seaweedfs/compose.yaml restart`, xác nhận cùng object và DB vẫn đọc được. Các bước này là hướng dẫn, không phải bằng chứng đã chạy.
+
+Để kiểm tra độc lập gateway trước khi có route ứng dụng, tạo object thử riêng bằng profile `gallery`, đọc lại, so sánh rồi xóa (không dùng key của ảnh thật). Chạy từng lệnh và dừng ngay nếu lệnh lỗi; `cmp` không in gì khi nội dung khớp:
+
+```sh
+export AWS_PROFILE=gallery AWS_DEFAULT_REGION=us-east-1
+tmpdir="$(mktemp -d)"
+printf 'storage-check\n' > "$tmpdir/input"
+key="setup-check/$(python3 -c 'import uuid; print(uuid.uuid4())')"
+aws --endpoint-url http://127.0.0.1:8333 s3api put-object --bucket gallery-photos --key "$key" --body "$tmpdir/input"
+aws --endpoint-url http://127.0.0.1:8333 s3api head-object --bucket gallery-photos --key "$key"
+aws --endpoint-url http://127.0.0.1:8333 s3api get-object --bucket gallery-photos --key "$key" "$tmpdir/output"
+cmp "$tmpdir/input" "$tmpdir/output"
+aws --endpoint-url http://127.0.0.1:8333 s3api delete-object --bucket gallery-photos --key "$key"
+rm -r "$tmpdir"
+```
+
+Nếu lệnh bị lỗi hoặc gián đoạn, kiểm tra lỗi trước khi tiếp tục; xóa object thử bằng cùng lệnh `delete-object` và key đã tạo, rồi xóa thư mục tạm. Kiểm tra riêng quyền truy cập nặc danh với một object thật đang tồn tại như trên; không coi lỗi kết nối hay object không tồn tại là bằng chứng bucket riêng tư. Quyền truy cập được giới hạn bởi cấu hình gateway và mạng, không phải mã hóa dữ liệu lưu trên volume; bảo vệ host, bản sao lưu và quyền Docker. Lệnh kiểm tra này không chứng minh quyền riêng tư của mọi object hoặc policy.
+
 
 Khi storage lỗi, giữ nguyên DB và manifest, khôi phục gateway/volume, sau đó chạy recovery do backend cung cấp; kiểm tra job còn pending và log lỗi, không xóa thủ công chỉ vì object trông mồ côi. Với backup, dừng ghi và quiesce ứng dụng/worker, dừng SeaweedFS, sao lưu nhất quán named volume **cùng** database ứng dụng và cấu hình cần thiết; bảo vệ riêng credential. Khôi phục các bản cùng thời điểm, khởi động storage và DB trước backend/recovery, đối chiếu object với DB trước khi nhận ghi. Snapshot không đồng bộ DB và storage có thể tạo orphan hoặc thiếu object; recovery không thể tự tạo lại bytes đã mất. Không xóa volume hoặc manifest để xử lý lỗi.

@@ -49,6 +49,12 @@ Kiểm tra bucket bằng `AWS_PROFILE=bootstrap AWS_DEFAULT_REGION=us-east-1 aws
 
 Khi ngừng dịch vụ, dùng `docker compose -f infra/seaweedfs/compose.yaml down` (không có `-v`); named volume vẫn tồn tại và `up -d` sẽ dùng lại. `restart` hoặc `down` không phải backup; xóa volume sẽ xóa dữ liệu. Đường dẫn secret phải vẫn tồn tại khi khởi động lại.
 
+## Kiểm tra độc lập bằng `weed mini`
+
+Đã kiểm tra riêng SeaweedFS **4.54** trên macOS với `weed mini`, thư mục dữ liệu tạm mới và các cổng loopback riêng; kết quả này không chứng minh cấu hình Docker image 4.53 ở trên. Dùng file `-s3.config` với identity có quyền Admin/Read/Write/List và `-bucket=gallery-test`, adapter đã PUT, HEAD và GET đúng bytes, length và `image/webp`; GET nặc danh trên object hiện hữu trả 403. Sau khi dừng và khởi động lại `weed mini` với cùng thư mục, GET vẫn trả đúng bytes; DELETE thành công và HEAD sau đó trả 404. Với SQLite thực và Node 22, lifecycle publish, media handler (body, Content-Type, Content-Length, ETag, Cache-Control) và lifecycle delete cũng chạy thành công. Đây là kiểm tra module trực tiếp, không phải kiểm tra route HTTP ứng dụng.
+
+Một lần kiểm tra riêng khác với 4.54 xác nhận `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` và `S3_BUCKET` được `weed mini` nhận: PUT đã ký thành công, GET nặc danh trên object hiện hữu trả 403 và request ký bằng credential sai trả 403. Không vì thế mặc định mọi phiên bản hoặc cấu hình đều an toàn: luôn kiểm tra anonymous access trên object thật và hạn chế tất cả cổng nội bộ vào loopback. Không dùng credential ví dụ cho môi trường thật.
+
 ## Hợp đồng kết nối backend
 
 - Endpoint từ backend chạy trên host: `http://127.0.0.1:8333`; region ký request `us-east-1`; bucket `gallery-photos`; path-style **true**. Nếu backend ở container khác, loopback trỏ vào chính container đó: cần đưa hai service vào mạng Docker riêng, dùng tên service/endpoint phù hợp và không publish các cổng nội bộ ra ngoài.
@@ -72,7 +78,7 @@ Lệnh `aws configure get` dùng `AWS_SHARED_CREDENTIALS_FILE` đã export ở t
 
 Repository dùng WAL, `synchronous=FULL`, foreign key và timeout 5 giây. `withLock(fn)` giữ transaction `BEGIN IMMEDIATE` trên **database lock riêng** đến khi callback hoàn tất; khóa giải phóng khi process chết, không có lease hoặc cơ chế cướp khóa. Transaction lock không atomic với DB dữ liệu hay S3: manifest commit trước PUT; insert Photo cùng toàn bộ variant là một transaction DB; ẩn Photo cùng tạo delete job là một transaction khác; hoàn tất delete xóa metadata ẩn và job trong một transaction. Không bao giờ giữ một transaction DB xuyên qua S3 để giả định atomicity. Mọi publish, delete và recovery phải dùng cùng lock; media giữ lock khi tìm variant đã công bố, lấy object và kiểm tra metadata, rồi giải phóng trước khi stream response. Truy cập bỏ qua lock phá vỡ bảo đảm; tranh chấp lock có thể thất bại sau 5 giây.
 
-Media giả định stream S3 đã lấy vẫn đọc được sau khi object bị xóa đồng thời. Hành vi này chưa được xác minh trực tiếp với SeaweedFS vì Docker không khả dụng; cần kiểm tra với triển khai thực tế trước khi dựa vào giả định này. Nếu stream lỗi sau khi response bắt đầu, kết nối bị hủy; xóa object không thu hồi bytes đã gửi hoặc cache.
+Media giả định stream S3 đã lấy vẫn đọc được sau khi object bị xóa đồng thời. Hành vi này chưa được xác minh trực tiếp với SeaweedFS; cần kiểm tra với triển khai thực tế trước khi dựa vào giả định này. Nếu stream lỗi sau khi response bắt đầu, kết nối bị hủy; xóa object không thu hồi bytes đã gửi hoặc cache.
 
 `createStorageLifecycle({ repository, storage })` từ `api/src/storage/lifecycle.js` cung cấp:
 
